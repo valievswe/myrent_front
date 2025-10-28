@@ -1,0 +1,277 @@
+<script setup>
+import { ref, computed, onMounted, watch } from 'vue'
+import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
+import SectionMain from '@/components/SectionMain.vue'
+import SectionTitle from '@/components/SectionTitle.vue'
+import CardBox from '@/components/CardBox.vue'
+import BaseButton from '@/components/BaseButton.vue'
+import FormField from '@/components/FormField.vue'
+import FormControl from '@/components/FormControl.vue'
+import { listSections } from '@/services/sections'
+import { listStores } from '@/services/stores'
+import { listStalls } from '@/services/stalls'
+import { listAttendances } from '@/services/attendances'
+import { listContracts } from '@/services/contracts'
+
+const loading = ref(false)
+const errorMsg = ref('')
+
+const sections = ref([])
+const stores = ref([])
+const stalls = ref([])
+const attendanceMap = ref({}) // { [stallId]: 'PAID'|'UNPAID' }
+const storePaidMap = ref({}) // { [storeId]: boolean }
+
+const typeFilter = ref('both') // both | stores | stalls
+const selectedSectionId = ref(null)
+const date = ref(new Date().toISOString().substring(0, 10))
+const search = ref('')
+const zoom = ref(1)
+
+function isStoreOccupied(store) {
+  if (typeof store?.isOccupied === 'boolean') return store.isOccupied
+  const cs = store?.contracts
+  if (!Array.isArray(cs)) return false
+  const today = new Date()
+  return cs.some((c) => {
+    const active = c.isActive !== false
+    const startOk = !c.issueDate || new Date(c.issueDate) <= today
+    const endOk = !c.expiryDate || new Date(c.expiryDate) >= today
+    return active && startOk && endOk
+  })
+}
+
+async function fetchAll() {
+  loading.value = true
+  errorMsg.value = ''
+  try {
+    const [sec, sto, sta, con] = await Promise.all([
+      listSections(),
+      listStores({ page: 1, limit: 1000, withContracts: true }),
+      listStalls({ page: 1, limit: 1000 }),
+      listContracts({ page: 1, limit: 1000 }),
+    ])
+    sections.value = sec || []
+    stores.value = sto.data || []
+    stalls.value = sta.data || []
+    // Build store -> paid map from contracts with any PAID transaction
+    const paid = {}
+    for (const c of (con?.data || [])) {
+      const hasPaid = Array.isArray(c.transactions) && c.transactions.some((t) => t.status === 'PAID')
+      if (hasPaid && c.storeId) paid[c.storeId] = true
+    }
+    storePaidMap.value = paid
+  } catch (e) {
+    errorMsg.value = e?.response?.data?.message || 'Yuklashda xatolik'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function fetchAttendanceForDate() {
+  try {
+    const res = await listAttendances({ dateFrom: date.value, dateTo: date.value, page: 1, limit: 5000 })
+    const map = {}
+    for (const a of res.data || []) map[a.stallId] = a.status
+    attendanceMap.value = map
+  } catch {}
+}
+
+onMounted(async () => {
+  await fetchAll()
+  await fetchAttendanceForDate()
+})
+watch(date, fetchAttendanceForDate)
+
+const filteredSections = computed(() => {
+  if (!selectedSectionId.value) return sections.value
+  return sections.value.filter((s) => s.id === Number(selectedSectionId.value))
+})
+
+function computeGrid(itemsCount) {
+  const cols = Math.min(12, Math.max(4, Math.ceil(Math.sqrt(itemsCount || 1))))
+  const style = { gridTemplateColumns: `repeat(${cols}, var(--block-size))` }
+  return { cols, style }
+}
+
+const normSearch = computed(() => (search.value || '').trim().toLowerCase())
+
+function filterStoresBySection(sectionId) {
+  const q = normSearch.value
+  return (stores.value || [])
+    .filter((s) => Number(s.sectionId) === Number(sectionId))
+    .filter((s) => !q || (s.storeNumber || '').toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q))
+}
+function filterStallsBySection(sectionId) {
+  const q = normSearch.value
+  return (stalls.value || [])
+    .filter((s) => Number(s.sectionId) === Number(sectionId))
+    .filter((s) => !q || (s.description || '').toLowerCase().includes(q) || String(s.id).includes(q))
+}
+
+function storeColor(s) {
+  return isStoreOccupied(s) ? 'bg-red-500' : 'bg-green-500'
+}
+function stallColor(st) {
+  const stStatus = attendanceMap.value[st.id]
+  if (stStatus === 'PAID') return 'bg-green-500'
+  if (stStatus === 'UNPAID') return 'bg-red-500'
+  return 'bg-gray-400'
+}
+
+function isStorePaid(store) {
+  return !!(storePaidMap.value && storePaidMap.value[store?.id])
+}
+function getAttendanceStatus(stallId) {
+  return (attendanceMap.value && attendanceMap.value[stallId]) || null
+}
+
+function openStore(it) {
+  // minimal: just alert; could open side panel later
+  try {
+    alert(`Do'kon: ${it.storeNumber}\nBo'lim: ${it.sectionId}\nHolat: ${isStoreOccupied(it) ? 'Band' : "Bo'sh"}\nTo'lov: ${isStorePaid(it) ? "To'langan" : 'Kutilmoqda'}`)
+  } catch {}
+}
+function openStall(it) {
+  const stStatus = attendanceMap.value[it.id] || '-'
+  try {
+    alert(`Rasta #${it.id}\nBo'lim: ${it.sectionId}\nBugun: ${stStatus}`)
+  } catch {}
+}
+</script>
+
+<template>
+  <LayoutAuthenticated>
+    <SectionMain>
+      <SectionTitle first>Raqamli Xarita (Bo'limlar, Do'konlar, Rastalar)</SectionTitle>
+
+      <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">{{ errorMsg }}</div>
+
+      <CardBox class="mb-4">
+        <div class="flex flex-wrap items-end gap-3">
+          <FormField label="Turi">
+            <div class="flex items-center gap-2">
+              <label class="flex items-center gap-1 text-sm"><input type="radio" value="both" v-model="typeFilter" /> Ikkalasi</label>
+              <label class="flex items-center gap-1 text-sm"><input type="radio" value="stores" v-model="typeFilter" /> Do'konlar</label>
+              <label class="flex items-center gap-1 text-sm"><input type="radio" value="stalls" v-model="typeFilter" /> Rastalar</label>
+            </div>
+          </FormField>
+          <FormField label="Bo'lim">
+            <select v-model="selectedSectionId" class="w-56 rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100">
+              <option :value="null">Barchasi</option>
+              <option v-for="s in sections" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </select>
+          </FormField>
+          <FormField label="Sana (Rasta holati)">
+            <FormControl v-model="date" type="date" />
+          </FormField>
+          <FormField label="Qidirish">
+            <FormControl v-model="search" placeholder="Do'kon raqami yoki Rasta izohi" />
+          </FormField>
+          <FormField label="Masshtab">
+            <input type="range" min="0.75" max="1.5" step="0.05" v-model.number="zoom" />
+          </FormField>
+        </div>
+      </CardBox>
+
+      <CardBox class="mb-4">
+      <div class="flex items-center gap-6 px-4 py-2 text-sm">
+        <div class="font-semibold">Afsona</div>
+        <div class="flex items-center gap-2">
+          <span class="h-3 w-3 rounded-sm bg-green-500 inline-block"></span>
+          <span>Do'kon: Bo'sh</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="h-3 w-3 rounded-sm bg-red-500 inline-block"></span>
+          <span>Do'kon: Band</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="h-3 w-3 rounded-sm bg-gray-400 inline-block"></span>
+          <span>Rasta: Bugun yo'q</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="h-3 w-3 rounded-sm bg-red-500 inline-block"></span>
+          <span>Rasta: UNPAID</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="h-3 w-3 rounded-sm bg-green-500 inline-block"></span>
+          <span>Rasta: PAID</span>
+        </div>
+      </div>
+      </CardBox>
+
+      <div class="flex flex-col gap-6">
+        <div
+          v-for="sec in filteredSections"
+          :key="sec.id"
+          class="rounded border border-gray-200 p-4 dark:border-gray-700"
+          :style="{ transform: `scale(${zoom})`, transformOrigin: 'top left' }"
+        >
+          <div class="mb-3 flex items-center justify-between">
+            <div class="text-lg font-semibold">{{ sec.name }}</div>
+            <div class="text-sm text-gray-500">ID: {{ sec.id }}</div>
+          </div>
+          <div class="space-y-4">
+            <div v-if="typeFilter === 'both' || typeFilter === 'stores'">
+              <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                <template v-if="filterStoresBySection(sec.id).length">
+                  <span>Do'konlar: {{ filterStoresBySection(sec.id).length }}</span>
+                  <span class="ml-3 text-xs text-gray-500">
+                    Bo'sh: {{ filterStoresBySection(sec.id).filter(s => !isStoreOccupied(s)).length }},
+                    Band: {{ filterStoresBySection(sec.id).filter(s => isStoreOccupied(s)).length }},
+                    To'langan: {{ filterStoresBySection(sec.id).filter(s => isStorePaid(s)).length }}
+                  </span>
+                </template>
+                <template v-else>Do'konlar (0)</template>
+              </div>
+              <div class="grid gap-2" :style="computeGrid(filterStoresBySection(sec.id).length).style" style="--block-size: 56px">
+                <div
+                  v-for="s in filterStoresBySection(sec.id)"
+                  :key="s.id"
+                  class="flex h-14 w-14 cursor-pointer items-center justify-center rounded text-xs text-white"
+                  :class="storeColor(s)"
+                  :title="`#${s.id} ${s.storeNumber || ''}\nHolat: ${isStoreOccupied(s) ? 'Band' : 'Bo\'sh'}\nTo'lov: ${isStorePaid(s) ? 'To\'langan' : 'Kutilmoqda'}`"
+                  @click="openStore(s)"
+                >
+                  {{ s.storeNumber || s.id }}
+                </div>
+              </div>
+            </div>
+
+            <div v-if="typeFilter === 'both' || typeFilter === 'stalls'">
+              <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                <template v-if="filterStallsBySection(sec.id).length">
+                  <span>Rastalar: {{ filterStallsBySection(sec.id).length }}</span>
+                  <span class="ml-3 text-xs text-gray-500">
+                    PAID: {{ filterStallsBySection(sec.id).filter(st => getAttendanceStatus(st.id) === 'PAID').length }},
+                    UNPAID: {{ filterStallsBySection(sec.id).filter(st => getAttendanceStatus(st.id) === 'UNPAID').length }},
+                    Yo'q: {{ filterStallsBySection(sec.id).filter(st => !getAttendanceStatus(st.id)).length }}
+                  </span>
+                </template>
+                <template v-else>Rastalar (0)</template>
+              </div>
+              <div class="grid gap-2" :style="computeGrid(filterStallsBySection(sec.id).length).style" style="--block-size: 48px">
+                <div
+                  v-for="st in filterStallsBySection(sec.id)"
+                  :key="st.id"
+                  class="flex h-12 w-12 cursor-pointer items-center justify-center rounded text-xs text-white"
+                  :class="stallColor(st)"
+                  :title="`#${st.id} ${st.description || ''}\nBugun: ${getAttendanceStatus(st.id) || '-'}`"
+                  @click="openStall(st)"
+                >
+                  #{{ st.id }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </SectionMain>
+  </LayoutAuthenticated>
+</template>
+
+<style scoped>
+.grid {
+  display: grid;
+}
+</style>

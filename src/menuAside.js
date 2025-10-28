@@ -1,0 +1,37 @@
+import {
+  mdiAccountCircle,
+  mdiMonitor,
+  mdiGithub,
+  mdiLock,
+  mdiAlertCircle,
+  mdiSquareEditOutline,
+  mdiTable,
+  mdiViewList,
+  mdiTelevisionGuide,
+  mdiResponsive,
+  mdiPalette,
+  mdiReact,
+  mdiAccountGroup,
+  mdiOfficeBuilding,
+  mdiStoreOutline,
+  mdiFileDocumentOutline,
+  mdiSwapHorizontal,
+} from '@mdi/js'
+
+export default [
+  {
+    to: '/dashboard',
+    icon: mdiMonitor,
+    label: 'Boshqaruv paneli',
+  },
+  { to: '/sale-types', label: 'Sotuv turlari', icon: mdiFileDocumentOutline },
+  { to: '/sections', label: "Bo'limlar", icon: mdiOfficeBuilding },
+  { to: '/owners', label: 'Tadbirkorlar', icon: mdiAccountGroup },
+  { to: '/stores', label: "Do'konlar", icon: mdiStoreOutline },
+  { to: '/stalls', label: 'Rastalar', icon: mdiOfficeBuilding },
+  { to: '/map', label: 'Raqamli xarita', icon: mdiTelevisionGuide },
+  { to: '/attendances', label: "Kunlik to'lovlar", icon: mdiTable },
+  { to: '/contracts', label: 'Shartnomalar', icon: mdiFileDocumentOutline },
+  { to: '/transactions', label: 'Tranzaksiyalar', icon: mdiSwapHorizontal },
+  { to: '/users', label: 'Foydalanuvchilar', icon: mdiAccountCircle },
+]
