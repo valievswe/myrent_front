@@ -47,7 +47,8 @@ async function fetchAll() {
   try {
     const [sec, sto, sta, con] = await Promise.all([
       listSections(),
-      listStores({ page: 1, limit: 1000, withContracts: true }),
+      // Backend defaults to only free; request all for the map
+      listStores({ page: 1, limit: 1000, withContracts: true, onlyFree: false }),
       listStalls({ page: 1, limit: 1000 }),
       listContracts({ page: 1, limit: 1000 }),
     ])

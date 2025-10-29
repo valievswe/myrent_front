@@ -11,6 +11,7 @@ import { listAttendances, createAttendance, updateAttendance, deleteAttendance, 
 import { listStalls } from '@/services/stalls'
 import { listSections } from '@/services/sections'
 import { listSaleTypes } from '@/services/saleTypes'
+import { downloadCSV } from '../utils/export'
 
 const items = ref([])
 const loading = ref(false)
@@ -193,6 +194,22 @@ async function loadStallsBulk() {
     bulkLoading.value = false
   }
 }
+async function selectAllAcrossFiltered() {
+  bulkLoading.value = true
+  try {
+    const res = await listStalls({ search: stallSearchBulk.value, page: 1, limit: 5000 })
+    let list = res.data || []
+    if (selectedSectionId.value) list = list.filter((s) => Number(s.sectionId) === Number(selectedSectionId.value))
+    if (selectedSaleTypeId.value) list = list.filter((s) => Number(s.saleTypeId) === Number(selectedSaleTypeId.value))
+    const set = new Set(selectedStallIds.value)
+    for (const it of list) set.add(it.id)
+    selectedStallIds.value = set
+  } catch (e) {
+    console.error(e)
+  } finally {
+    bulkLoading.value = false
+  }
+}
 function statusForStall(stall) {
   const a = attendanceByStall.value[stall.id]
   return a ? a.status : null
@@ -214,6 +231,27 @@ function selectAllPage() {
 function clearSelected() {
   selectedStallIds.value = new Set()
 }
+// History per stall
+const historyByStall = ref({}) // { [stallId]: attendance[] }
+const historyOpen = ref({}) // { [stallId]: boolean }
+const historyLoading = ref({})
+async function loadHistory(stallId) {
+  historyLoading.value = { ...historyLoading.value, [stallId]: true }
+  try {
+    const res = await listAttendances({ stallId, page: 1, limit: 30 })
+    historyByStall.value = { ...historyByStall.value, [stallId]: (res.data || []).sort((a,b) => new Date(b.date) - new Date(a.date)) }
+  } catch (e) {
+    console.error(e)
+  } finally {
+    historyLoading.value = { ...historyLoading.value, [stallId]: false }
+  }
+}
+async function toggleHistory(stall) {
+  const id = stall.id
+  const open = !!historyOpen.value[id]
+  historyOpen.value = { ...historyOpen.value, [id]: !open }
+  if (!open && !historyByStall.value[id]) await loadHistory(id)
+}
 async function createOne(stall) {
   try {
     await createAttendance({ date: bulkDate.value, stallId: stall.id })
@@ -234,6 +272,39 @@ async function bulkCreate() {
     await loadAttendancesForDate()
   } catch (e) {
     alert(e?.response?.data?.message || e.message || 'Mass yaratishda xatolik')
+  } finally {
+    bulkLoading.value = false
+  }
+}
+
+async function exportAttendancesCSV() {
+  bulkLoading.value = true
+  try {
+    const headers = ['Sana', 'RastaID', 'Izoh', 'Maydon', 'Presskurant', 'Hisoblangan', 'Holat']
+    const rows = []
+    let p = 1
+    const dateStr = bulkDate.value
+    while (true) {
+      const res = await listAttendances({ dateFrom: dateStr, dateTo: dateStr, page: p, limit: 200 })
+      const arr = res.data || []
+      for (const a of arr) {
+        rows.push([
+          a.date ? a.date.substring(0, 10) : '',
+          a.stallId,
+          a.Stall?.description || '',
+          a.Stall?.area ?? '',
+          a.Stall?.SaleType?.tax ?? '',
+          a.amount ?? '',
+          a.status,
+        ])
+      }
+      if (arr.length < 200) break
+      p++
+    }
+    downloadCSV(`attendances_${dateStr}.csv`, headers, rows)
+  } catch (e) {
+    console.error(e)
+    alert('Eksportda xatolik')
   } finally {
     bulkLoading.value = false
   }
@@ -273,6 +344,7 @@ onMounted(async () => {
           <div class="flex gap-2">
             <BaseButton color="success" :disabled="bulkLoading" label="Tanlanganlarga yaratish" @click="bulkCreate" />
             <BaseButton color="info" outline :disabled="!selectedStallIds.size" label="Tanlovni tozalash" @click="clearSelected" />
+            <BaseButton color="info" outline :disabled="bulkLoading" label="Eksport (Kun)" @click="exportAttendancesCSV" />
           </div>
         </div>
       </CardBox>
@@ -313,52 +385,82 @@ onMounted(async () => {
               <tr v-else-if="!stallsBulk.length">
                 <td colspan="7" class="px-4 py-6 text-center">Ma'lumot topilmadi</td>
               </tr>
-              <tr v-for="s in displayedStalls" :key="s.id" class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
-                <td class="px-4 py-2"><input type="checkbox" :checked="isSelected(s)" @change="() => toggleSelect(s)" /></td>
-                <td class="px-4 py-2">#{{ s.id }} - {{ s.description || '' }}</td>
-                <td class="px-4 py-2">{{ s.area }}</td>
-                <td class="px-4 py-2">{{ s.SaleType?.tax }}</td>
-                <td class="px-4 py-2">{{ computedFeeFor(s) }}</td>
-                <td class="px-4 py-2">
-                  <span v-if="statusForStall(s) === 'PAID'" class="text-green-600">PAID</span>
-                  <span v-else-if="statusForStall(s) === 'UNPAID'" class="text-red-600">UNPAID</span>
-                  <span v-else class="text-gray-500">-</span>
-                </td>
-                <td class="px-4 py-2 text-right">
-                  <template v-if="!attendanceByStall[s.id]">
-                    <BaseButton
-                      color="success"
-                      small
-                      label="Yaratish"
-                      @click="createOne(s)"
-                    />
-                  </template>
-                  <template v-else-if="attendanceByStall[s.id]?.status === 'UNPAID'">
-                    <BaseButton
-                      color="success"
-                      small
-                      outline
-                      label="To'lov"
-                      class="ml-2"
-                      @click="pay(attendanceByStall[s.id])"
-                    />
-                    <BaseButton
-                      color="danger"
-                      small
-                      outline
-                      label="O'chirish"
-                      class="ml-2"
-                      @click="removeItem(attendanceByStall[s.id])"
-                    />
-                  </template>
-                  <template v-else-if="attendanceByStall[s.id]?.status === 'PAID'">
-                    <span class="text-green-600">To'langan</span>
-                  </template>
-                  <template v-else>
-                    <span class="text-gray-500">-</span>
-                  </template>
-                </td>
-              </tr>
+              <template v-for="s in displayedStalls" :key="s.id">
+                <tr class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
+                  <td class="px-4 py-2"><input type="checkbox" :checked="isSelected(s)" @change="() => toggleSelect(s)" /></td>
+                  <td class="px-4 py-2">#{{ s.id }} - {{ s.description || '' }}</td>
+                  <td class="px-4 py-2">{{ s.area }}</td>
+                  <td class="px-4 py-2">{{ s.SaleType?.tax }}</td>
+                  <td class="px-4 py-2">{{ computedFeeFor(s) }}</td>
+                  <td class="px-4 py-2">
+                    <span v-if="statusForStall(s) === 'PAID'" class="text-green-600">PAID</span>
+                    <span v-else-if="statusForStall(s) === 'UNPAID'" class="text-red-600">UNPAID</span>
+                    <span v-else class="text-gray-500">-</span>
+                  </td>
+                  <td class="px-4 py-2 text-right">
+                    <template v-if="!attendanceByStall[s.id]">
+                      <BaseButton
+                        color="success"
+                        small
+                        label="Yaratish"
+                        @click="createOne(s)"
+                      />
+                    </template>
+                    <template v-else-if="attendanceByStall[s.id]?.status === 'UNPAID'">
+                      <BaseButton
+                        color="success"
+                        small
+                        outline
+                        label="To'lov"
+                        class="ml-2"
+                        @click="pay(attendanceByStall[s.id])"
+                      />
+                      <BaseButton
+                        color="danger"
+                        small
+                        outline
+                        label="O'chirish"
+                        class="ml-2"
+                        @click="removeItem(attendanceByStall[s.id])"
+                      />
+                    </template>
+                    <template v-else-if="attendanceByStall[s.id]?.status === 'PAID'">
+                      <span class="text-green-600">To'langan</span>
+                    </template>
+                    <template v-else>
+                      <span class="text-gray-500">-</span>
+                    </template>
+                    <BaseButton color="info" small outline label="Tarix" class="ml-2" @click="toggleHistory(s)" />
+                  </td>
+                </tr>
+                <tr v-if="historyOpen[s.id]" class="bg-gray-50 dark:bg-gray-800/50">
+                  <td colspan="7" class="px-4 py-2">
+                    <div class="text-sm font-medium mb-2">Rasta to'lov tarixi (#{{ s.id }})</div>
+                    <div v-if="(historyLoading[s.id])" class="text-xs text-gray-500">Yuklanmoqda...</div>
+                    <div v-else-if="!(historyByStall[s.id] || []).length" class="text-xs text-gray-500">Tarix yo'q</div>
+                    <div v-else class="overflow-x-auto">
+                      <table class="w-full text-sm">
+                        <thead>
+                          <tr>
+                            <th class="px-2 py-1 text-left">Sana</th>
+                            <th class="px-2 py-1 text-left">Summasi</th>
+                            <th class="px-2 py-1 text-left">Holat</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="a in (historyByStall[s.id] || [])" :key="a.id">
+                            <td class="px-2 py-1">{{ a.date ? a.date.substring(0,10) : '-' }}</td>
+                            <td class="px-2 py-1">{{ a.amount }}</td>
+                            <td class="px-2 py-1">
+                              <span :class="a.status === 'PAID' ? 'text-green-600' : a.status === 'UNPAID' ? 'text-red-600' : 'text-gray-600'">{{ a.status }}</span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>

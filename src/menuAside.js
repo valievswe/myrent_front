@@ -30,6 +30,7 @@ export default [
   { to: '/stores', label: "Do'konlar", icon: mdiStoreOutline },
   { to: '/stalls', label: 'Rastalar', icon: mdiOfficeBuilding },
   { to: '/map', label: 'Raqamli xarita', icon: mdiTelevisionGuide },
+  { to: '/statistics', label: 'Statistika', icon: mdiTable },
   { to: '/attendances', label: "Kunlik to'lovlar", icon: mdiTable },
   { to: '/contracts', label: 'Shartnomalar', icon: mdiFileDocumentOutline },
   { to: '/transactions', label: 'Tranzaksiyalar', icon: mdiSwapHorizontal },

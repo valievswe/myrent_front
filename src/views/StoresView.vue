@@ -27,7 +27,8 @@ async function fetchData() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const res = await listStores({ search: search.value, page: page.value, limit: limit.value, withContracts: true })
+    // Backend defaults to only free; request all for full listing
+    const res = await listStores({ search: search.value, page: page.value, limit: limit.value, withContracts: true, onlyFree: false })
     items.value = res.data
     total.value = res.total ?? items.value.length
   } catch (e) {

@@ -1,7 +1,9 @@
 import http from './http'
 
-export async function listContracts({ page = 1, limit = 10 } = {}) {
-  const { data } = await http.get('/contracts', { params: { page, limit } })
+export async function listContracts({ page = 1, limit = 10, isActive } = {}) {
+  const params = { page, limit }
+  if (typeof isActive === 'boolean') params.isActive = isActive
+  const { data } = await http.get('/contracts', { params })
   return data // { data, pagination }
 }
 

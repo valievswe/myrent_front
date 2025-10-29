@@ -10,6 +10,7 @@ import FormControl from '@/components/FormControl.vue'
 import { listContracts, createContract, updateContract, deleteContract } from '@/services/contracts'
 import { listOwners } from '@/services/owners'
 import { listStores } from '@/services/stores'
+import { downloadCSV } from '../utils/export'
 
 const items = ref([])
 const loading = ref(false)
@@ -17,6 +18,7 @@ const errorMsg = ref('')
 const page = ref(1)
 const limit = ref(10)
 const total = ref(0)
+const statusFilter = ref('active')
 
 const owners = ref([])
 const stores = ref([])
@@ -24,6 +26,7 @@ const ownerSearch = ref('')
 const storeSearch = ref('')
 const ownerOptions = ref([])
 const storeOptions = ref([])
+const storeInfoMsg = ref('')
 
 const showForm = ref(false)
 const editingId = ref(null)
@@ -75,7 +78,8 @@ async function fetchData() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const res = await listContracts({ page: page.value, limit: limit.value })
+    const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
+    const res = await listContracts({ page: page.value, limit: limit.value, isActive })
     items.value = res.data
     total.value = res.pagination?.total ?? items.value.length
   } catch (e) {
@@ -91,7 +95,7 @@ async function preloadRefs() {
     owners.value = o.data
   } catch {}
   try {
-    const s = await listStores({ page: 1, limit: 100, withContracts: true })
+    const s = await listStores({ page: 1, limit: 100, withContracts: true, onlyFree: false })
     stores.value = s.data
   } catch {}
 }
@@ -154,7 +158,7 @@ async function submitForm() {
 }
 
 async function removeItem(id) {
-  if (!confirm("Haqiqatan o'chirmoqchimisiz?")) return
+  if (!confirm("Shartnomani arxivga yuborilsinmi?")) return
   loading.value = true
   errorMsg.value = ''
   try {
@@ -167,12 +171,29 @@ async function removeItem(id) {
   }
 }
 
+async function restoreItem(id) {
+  loading.value = true
+  errorMsg.value = ''
+  try {
+    await updateContract(id, { isActive: true })
+    await fetchData()
+  } catch (e) {
+    errorMsg.value = e?.response?.data?.message || 'Tiklashda xatolik'
+  } finally {
+    loading.value = false
+  }
+}
+
 onMounted(async () => {
   await preloadRefs()
   await fetchData()
   // Preload options for search selects
   try { await fetchOwnerOptions(ownerSearch.value?.trim() || '') } catch {}
   try { await fetchStoreOptions(storeSearch.value?.trim() || '') } catch {}
+})
+watch(statusFilter, async () => {
+  page.value = 1
+  await fetchData()
 })
 
 
@@ -199,6 +220,17 @@ async function fetchStoreOptions(q) {
   try {
     const res = await listStores({ search: q, page: 1, limit: 20, onlyFree: true })
     storeOptions.value = res.data || []
+    const qq = (q || '').toLowerCase()
+    const occupiedMatches = (stores.value || []).filter(
+      (s) => isStoreOccupied(s) && ((s.storeNumber || '').toLowerCase().includes(qq) || (s.description || '').toLowerCase().includes(qq)),
+    )
+    if (qq && occupiedMatches.length) {
+      const nums = occupiedMatches.slice(0, 3).map((s) => s.storeNumber || s.id).join(', ')
+      const more = occupiedMatches.length > 3 ? ` va yana ${occupiedMatches.length - 3} ta` : ''
+      storeInfoMsg.value = `Qidiruvga mos do'kon(lar) band: ${nums}${more}`
+    } else {
+      storeInfoMsg.value = ''
+    }
   } catch {}
 }
 
@@ -221,6 +253,85 @@ const filteredStores = computed(() => {
       (s.description || '').toLowerCase().includes(q),
   )
 })
+
+async function exportContractsCSV() {
+  loading.value = true
+  try {
+    const headers = [
+      'ID',
+      'Ega',
+      "Do'kon",
+      'Oylik',
+      'Berilgan',
+      'Tugash',
+      'Faol',
+      "Tranzaksiya soni",
+      "Oxirgi to'lov sana",
+      'Jami tolangan',
+    ]
+    const rows = []
+    let p = 1
+    const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
+    while (true) {
+      const res = await listContracts({ page: p, limit: 100, isActive })
+      const arr = res.data || []
+      for (const c of arr) {
+        const tx = c.transactions || []
+        const paid = tx.filter((t) => t.status === 'PAID')
+        const last = paid.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
+        const totalPaid = paid.reduce((sum, t) => sum + Number((t.amount && t.amount.toString()) || 0), 0)
+        rows.push([
+          c.id,
+          c.owner?.fullName || c.ownerId,
+          c.store?.storeNumber || c.storeId,
+          c.shopMonthlyFee ?? '',
+          c.issueDate ? c.issueDate.substring(0, 10) : '',
+          c.expiryDate ? c.expiryDate.substring(0, 10) : '',
+          c.isActive ? 'Ha' : "Yo'q",
+          tx.length,
+          last?.createdAt ? last.createdAt.substring(0, 10) : '',
+          totalPaid,
+        ])
+      }
+      if (arr.length < 100) break
+      p++
+    }
+    downloadCSV(`contracts_${new Date().toISOString().substring(0,10)}.csv`, headers, rows)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function exportContractTransactionsCSV() {
+  loading.value = true
+  try {
+    const headers = ['ContractID', 'Ega', "Do'kon", 'Sana', 'Summasi', 'Holat']
+    const rows = []
+    let p = 1
+    const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
+    while (true) {
+      const res = await listContracts({ page: p, limit: 100, isActive })
+      const arr = res.data || []
+      for (const c of arr) {
+        for (const t of (c.transactions || [])) {
+          rows.push([
+            c.id,
+            c.owner?.fullName || c.ownerId,
+            c.store?.storeNumber || c.storeId,
+            t.createdAt ? t.createdAt.substring(0, 10) : '',
+            t.amount ?? '',
+            t.status,
+          ])
+        }
+      }
+      if (arr.length < 100) break
+      p++
+    }
+    downloadCSV(`contract_transactions_${new Date().toISOString().substring(0,10)}.csv`, headers, rows)
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <template>
@@ -233,8 +344,21 @@ const filteredStores = computed(() => {
       </div>
 
       <CardBox class="mb-4">
-        <div class="flex items-center justify-end">
-          <BaseButton color="success" :disabled="loading" label="Yaratish" @click="openCreate" />
+        <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div class="flex gap-3 items-end">
+            <FormField label="Holati">
+              <select v-model="statusFilter" class="rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100">
+                <option value="active">Faol</option>
+                <option value="archived">Arxivlangan</option>
+                <option value="all">Barchasi</option>
+              </select>
+            </FormField>
+            <BaseButton color="info" outline :disabled="loading" label="Eksport (Shartnomalar)" @click="exportContractsCSV" />
+            <BaseButton color="info" outline :disabled="loading" label="Eksport (Tranzaksiyalar)" @click="exportContractTransactionsCSV" />
+          </div>
+          <div class="flex items-center justify-end">
+            <BaseButton color="success" :disabled="loading" label="Yaratish" @click="openCreate" />
+          </div>
         </div>
       </CardBox>
 
@@ -260,43 +384,78 @@ const filteredStores = computed(() => {
               <tr v-else-if="!items.length">
                 <td colspan="7" class="px-4 py-6 text-center">Ma'lumot topilmadi</td>
               </tr>
-              <tr
-                v-for="it in items"
-                :key="it.id"
-                class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
-                <td class="px-4 py-2">
-                  {{ owners.find((o) => o.id === it.ownerId)?.fullName || it.ownerId }}
-                </td>
-                <td class="px-4 py-2">
-                  {{ stores.find((s) => s.id === it.storeId)?.storeNumber || it.storeId }}
-                </td>
-                <td class="px-4 py-2">{{ it.shopMonthlyFee }}</td>
-                <td class="px-4 py-2">{{ it.issueDate ? it.issueDate.substring(0, 10) : '-' }}</td>
-                <td class="px-4 py-2">
-                  {{ it.expiryDate ? it.expiryDate.substring(0, 10) : '-' }}
-                </td>
-                <td class="px-4 py-2">{{ it.isActive ? 'Faol' : 'Faol emas' }}</td>
-                <td class="px-4 py-2">
-                  <span :class="(it.transactions || []).some(t => t.status === 'PAID') ? 'text-green-600' : 'text-red-600'">
-                    {{ (it.transactions || []).some(t => t.status === 'PAID') ? "To'langan" : 'Kutilmoqda' }}
-                  </span>
-                </td>
-                <td class="px-4 py-2 text-right">
-                  <BaseButton color="success" small outline label="To'lov" class="mr-2"
-                    :disabled="!it?.store?.click_payment_url"
-                    @click="openPayment(it?.store?.click_payment_url)" />
-                  <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
-                  <BaseButton
-                    color="danger"
-                    small
-                    outline
-                    label="O'chirish"
-                    class="ml-2"
-                    @click="removeItem(it.id)"
-                  />
-                </td>
-              </tr>
+              <template v-for="it in items" :key="it.id">
+                <tr class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
+                  <td class="px-4 py-2">
+                    {{ owners.find((o) => o.id === it.ownerId)?.fullName || it.ownerId }}
+                  </td>
+                  <td class="px-4 py-2">
+                    {{ stores.find((s) => s.id === it.storeId)?.storeNumber || it.storeId }}
+                  </td>
+                  <td class="px-4 py-2">{{ it.shopMonthlyFee }}</td>
+                  <td class="px-4 py-2">{{ it.issueDate ? it.issueDate.substring(0, 10) : '-' }}</td>
+                  <td class="px-4 py-2">
+                    {{ it.expiryDate ? it.expiryDate.substring(0, 10) : '-' }}
+                  </td>
+                  <td class="px-4 py-2">{{ it.isActive ? 'Faol' : 'Faol emas' }}</td>
+                  <td class="px-4 py-2">
+                    <span :class="(it.transactions || []).some(t => t.status === 'PAID') ? 'text-green-600' : 'text-red-600'">
+                      {{ (it.transactions || []).some(t => t.status === 'PAID') ? "To'langan" : 'Kutilmoqda' }}
+                    </span>
+                  </td>
+                  <td class="px-4 py-2 text-right">
+                    <BaseButton color="success" small outline label="To'lov" class="mr-2"
+                      :disabled="!it?.store?.click_payment_url || !it.isActive"
+                      @click="openPayment(it?.store?.click_payment_url)" />
+                    <BaseButton color="info" small label="Tahrirlash" class="mr-2" @click="openEdit(it)" />
+                    <BaseButton color="info" small outline label="Tarix" class="mr-2" @click="it._showHistory = !it._showHistory" />
+                    <template v-if="it.isActive">
+                      <BaseButton
+                        color="warning"
+                        small
+                        outline
+                        label="Arxivlash"
+                        @click="removeItem(it.id)"
+                      />
+                    </template>
+                    <template v-else>
+                      <BaseButton
+                        color="success"
+                        small
+                        outline
+                        label="Tiklash"
+                        @click="restoreItem(it.id)"
+                      />
+                    </template>
+                  </td>
+                </tr>
+                <tr v-if="it._showHistory" class="bg-gray-50 dark:bg-gray-800/50">
+                  <td colspan="8" class="px-4 py-2">
+                    <div class="text-sm font-medium mb-2">To'lov tarixi</div>
+                    <div v-if="!(it.transactions || []).length" class="text-xs text-gray-500">Tarix yo'q</div>
+                    <div v-else class="overflow-x-auto">
+                      <table class="w-full text-sm">
+                        <thead>
+                          <tr>
+                            <th class="px-2 py-1 text-left">Sana</th>
+                            <th class="px-2 py-1 text-left">Summasi</th>
+                            <th class="px-2 py-1 text-left">Holat</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="t in (it.transactions || []).slice().sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt))" :key="t.id">
+                            <td class="px-2 py-1">{{ t.createdAt ? t.createdAt.substring(0,10) : '-' }}</td>
+                            <td class="px-2 py-1">{{ t.amount }}</td>
+                            <td class="px-2 py-1">
+                              <span :class="t.status === 'PAID' ? 'text-green-600' : 'text-red-600'">{{ t.status }}</span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
@@ -357,6 +516,9 @@ const filteredStores = computed(() => {
                 placeholder="Qidirish: raqam yoki izoh"
                 @focus="fetchStoreOptions(storeSearch?.trim() || '')"
               />
+              <div v-if="storeInfoMsg && storeSearch" class="mt-1 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                {{ storeInfoMsg }}
+              </div>
               <div
                 v-if="storeOptions.length && storeSearch"
                 class="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded border border-gray-300 bg-white shadow dark:border-gray-700 dark:bg-gray-900"

@@ -1,3 +1,4 @@
+<!-- eslint-disable no-empty -->
 <script setup>
 import { ref, onMounted } from 'vue'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'

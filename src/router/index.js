@@ -39,6 +39,7 @@ const routes = [
     component: () => import('@/views/ContractsView.vue'),
   },
   { meta: { title: 'Raqamli xarita' }, path: '/map', name: 'map', component: () => import('@/views/MapView.vue') },
+  { meta: { title: 'Statistika' }, path: '/statistics', name: 'statistics', component: () => import('@/views/StatisticsView.vue') },
   {
     meta: { title: "Attendances" },
     path: '/attendances',
