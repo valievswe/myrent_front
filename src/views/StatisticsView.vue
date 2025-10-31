@@ -9,6 +9,7 @@ import LineChart from '@/components/Charts/LineChart.vue'
 import { getDailyStatistics, getMonthlyStatistics, getCurrentMonthIncome } from '@/services/statistics'
 import { listAttendances } from '@/services/attendances'
 import { listContracts } from '@/services/contracts'
+import { summarizeContractDebts, summarizeAttendanceDebts } from '@/utils/debt'
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -29,25 +30,31 @@ const monthDays = ref([])
 const stallsDaily = ref([]) // numbers per day
 const storesDaily = ref([]) // numbers per day
 
+const contractDebtSummary = ref({
+  expected: 0,
+  paid: 0,
+  debt: 0,
+  contractsWithDebt: 0,
+  totalContracts: 0,
+})
+const stallDebtSummary = ref({
+  expected: 0,
+  paid: 0,
+  debt: 0,
+  unpaidCount: 0,
+  totalAttendances: 0,
+})
+const debtLoading = ref(false)
+const debtError = ref('')
+
 function daysInMonth(year, monthIndex) {
   return new Date(year, monthIndex + 1, 0).getDate()
 }
 
-function ymd(d) {
-  const dt = new Date(d)
-  const y = dt.getFullYear()
-  const m = String(dt.getMonth() + 1).padStart(2, '0')
-  const da = String(dt.getDate()).padStart(2, '0')
-  return `${y}-${m}-${da}`
-}
-
-async function buildDailySeries() {
-  // Compute current month daily revenue for stalls and stores
+function computeDailySeries(attendances = [], contracts = []) {
   const now = new Date()
   const y = now.getFullYear()
   const m = now.getMonth()
-  const start = new Date(y, m, 1)
-  const end = new Date(y, m, daysInMonth(y, m))
   const labels = []
   const length = daysInMonth(y, m)
   for (let i = 1; i <= length; i++) labels.push(String(i))
@@ -56,35 +63,77 @@ async function buildDailySeries() {
   const stallsArr = new Array(length).fill(0)
   const storesArr = new Array(length).fill(0)
 
-  try {
-    // Stalls: sum PAID attendances by date
-    const att = await listAttendances({ dateFrom: ymd(start), dateTo: ymd(end), page: 1, limit: 5000 })
-    for (const a of att.data || []) {
-      if (a.status !== 'PAID') continue
-      const d = new Date(a.date)
-      const day = d.getDate()
-      const amount = Number((a.amount && a.amount.toString()) || 0)
-      stallsArr[day - 1] += amount
-    }
-  } catch {}
+  for (const attendance of attendances) {
+    if (!attendance || !attendance.date) continue
+    const d = new Date(attendance.date)
+    if (d.getFullYear() !== y || d.getMonth() !== m) continue
+    const isPaid =
+      attendance.status === 'PAID' ||
+      attendance.transaction?.status === 'PAID'
+    if (!isPaid) continue
+    const day = d.getDate()
+    const amount = Number((attendance.amount && attendance.amount.toString()) || 0)
+    stallsArr[day - 1] += amount
+  }
 
-  try {
-    // Stores: flatten contract transactions in this month
-    const cons = await listContracts({ page: 1, limit: 1000 })
-    for (const c of cons.data || []) {
-      for (const t of c.transactions || []) {
-        if (t.status !== 'PAID' || !t.createdAt) continue
-        const d = new Date(t.createdAt)
-        if (d.getMonth() !== m || d.getFullYear() !== y) continue
-        const day = d.getDate()
-        const amount = Number((t.amount && t.amount.toString()) || 0)
-        storesArr[day - 1] += amount
-      }
+  for (const contract of contracts) {
+    for (const tx of contract?.transactions || []) {
+      if (tx.status !== 'PAID' || !tx.createdAt) continue
+      const d = new Date(tx.createdAt)
+      if (d.getFullYear() !== y || d.getMonth() !== m) continue
+      const day = d.getDate()
+      const amount = Number((tx.amount && tx.amount.toString()) || 0)
+      storesArr[day - 1] += amount
     }
-  } catch {}
+  }
 
   stallsDaily.value = stallsArr
   storesDaily.value = storesArr
+}
+
+async function fetchAllAttendances({ pageSize = 200, maxPages = 25 } = {}) {
+  const results = []
+  let currentPage = 1
+  while (currentPage <= maxPages) {
+    const res = await listAttendances({ page: currentPage, limit: pageSize })
+    const chunk = res.data || []
+    results.push(...chunk)
+    if (chunk.length < pageSize) break
+    currentPage++
+  }
+  return results
+}
+
+async function fetchAllContracts({ pageSize = 120, maxPages = 15 } = {}) {
+  const results = []
+  let currentPage = 1
+  while (currentPage <= maxPages) {
+    const res = await listContracts({ page: currentPage, limit: pageSize })
+    const chunk = res.data || []
+    results.push(...chunk)
+    if (chunk.length < pageSize) break
+    currentPage++
+  }
+  return results
+}
+
+async function loadDetailedData() {
+  debtLoading.value = true
+  debtError.value = ''
+  try {
+    const [att, cons] = await Promise.all([fetchAllAttendances(), fetchAllContracts()])
+    stallDebtSummary.value = summarizeAttendanceDebts(att)
+    contractDebtSummary.value = summarizeContractDebts(cons, { asOf: new Date() })
+    computeDailySeries(att, cons)
+  } catch (e) {
+    debtError.value = e?.response?.data?.message || e.message || 'Qarzdorlikni hisoblashda xatolik'
+  } finally {
+    debtLoading.value = false
+  }
+}
+
+function formatAmount(value) {
+  return Number(value || 0).toLocaleString('ru-RU')
 }
 
 const chartData = computed(() => {
@@ -135,7 +184,7 @@ async function fetchStats() {
 
 onMounted(async () => {
   await fetchStats()
-  await buildDailySeries()
+  await loadDetailedData()
 })
 </script>
 
@@ -145,6 +194,9 @@ onMounted(async () => {
       <SectionTitle first>Statistika va To'lovlar Tahlili</SectionTitle>
 
       <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">{{ errorMsg }}</div>
+      <div v-if="debtError" class="mb-3 rounded border border-amber-200 bg-amber-50 p-3 text-amber-700">
+        {{ debtError }}
+      </div>
 
       <div class="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
         <CardBox>
@@ -194,6 +246,45 @@ onMounted(async () => {
         </CardBox>
       </div>
 
+      <CardBox class="mb-6">
+        <div class="flex flex-col gap-4 p-4 md:flex-row md:items-start md:justify-between">
+          <div class="flex-1">
+            <div class="text-xs uppercase tracking-wide text-gray-500">Do'kon shartnomalari</div>
+            <div class="mt-1 text-2xl font-semibold text-red-600">
+              {{ formatAmount(contractDebtSummary.debt) }}
+            </div>
+            <div class="mt-1 text-xs text-gray-500">
+              Majburiyat: {{ formatAmount(contractDebtSummary.expected) }} —
+              To'langan: {{ formatAmount(contractDebtSummary.paid) }}
+            </div>
+            <div class="text-xs text-gray-500">
+              Qarzdor shartnomalar: {{ contractDebtSummary.contractsWithDebt }} / {{ contractDebtSummary.totalContracts }}
+            </div>
+          </div>
+          <div class="flex-1">
+            <div class="text-xs uppercase tracking-wide text-gray-500">Rasta yig'imlari</div>
+            <div class="mt-1 text-2xl font-semibold text-red-600">
+              {{ formatAmount(stallDebtSummary.debt) }}
+            </div>
+            <div class="mt-1 text-xs text-gray-500">
+              Majburiyat: {{ formatAmount(stallDebtSummary.expected) }} —
+              To'langan: {{ formatAmount(stallDebtSummary.paid) }}
+            </div>
+            <div class="text-xs text-gray-500">
+              To'lanmagan qatnovlar: {{ stallDebtSummary.unpaidCount }} / {{ stallDebtSummary.totalAttendances }}
+            </div>
+          </div>
+          <div class="flex items-center justify-end md:justify-center">
+            <BaseButton
+              color="info"
+              :disabled="debtLoading"
+              :label="debtLoading ? 'Hisoblanmoqda...' : 'Qarzdorlikni yangilash'"
+              @click="loadDetailedData"
+            />
+          </div>
+        </div>
+      </CardBox>
+
       <CardBox>
         <div class="p-4">
           <div class="mb-3 text-sm font-medium">Joriy oy: kunlik tushum (Rasta vs Do'kon)</div>
@@ -205,4 +296,3 @@ onMounted(async () => {
     </SectionMain>
   </LayoutAuthenticated>
 </template>
-

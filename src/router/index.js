@@ -1,4 +1,4 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router'
 import Home from '@/views/HomeView.vue'
 import SaleTypesView from '@/views/SaleTypesView.vue'
 import SectionsView from '@/views/SectionsView.vue'
@@ -6,6 +6,12 @@ import OwnersView from '@/views/OwnersView.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
+  {
+    meta: { title: "Ommaviy to'lov", public: true },
+    path: '/pay',
+    name: 'public-pay',
+    component: () => import('@/views/PublicPayView.vue'),
+  },
   {
     meta: { title: 'Boshqaruv paneli' },
     path: '/dashboard',
@@ -67,7 +73,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHashHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes,
   scrollBehavior(to, from, savedPosition) {
     return savedPosition || { top: 0 }

@@ -28,6 +28,18 @@ const ownerOptions = ref([])
 const storeOptions = ref([])
 const storeInfoMsg = ref('')
 
+const SEARCH_MIN_LENGTH = 2
+const searchTerm = ref('')
+const searchResults = ref(null)
+
+const searchActive = computed(() => (searchTerm.value || '').trim().length >= SEARCH_MIN_LENGTH)
+const displayItems = computed(() => (searchActive.value ? searchResults.value || [] : items.value))
+const displayTotal = computed(() => (searchActive.value ? displayItems.value.length : total.value))
+const showShortSearchHint = computed(() => {
+  const len = (searchTerm.value || '').trim().length
+  return len > 0 && len < SEARCH_MIN_LENGTH
+})
+
 const showForm = ref(false)
 const editingId = ref(null)
 const form = ref({
@@ -84,6 +96,59 @@ async function fetchData() {
     total.value = res.pagination?.total ?? items.value.length
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || 'Yuklashda xatolik'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function runSearch() {
+  const term = (searchTerm.value || '').trim()
+  if (term.length < SEARCH_MIN_LENGTH) {
+    searchResults.value = null
+    return
+  }
+  errorMsg.value = ''
+  loading.value = true
+  try {
+    const matches = []
+    const chunkSize = 100
+    const maxPages = 20
+    const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
+    let pageCursor = 1
+    let totalAvailable = Infinity
+
+    while (pageCursor <= maxPages) {
+      const res = await listContracts({ page: pageCursor, limit: chunkSize, isActive })
+      const data = res.data || []
+      matches.push(...data)
+      const reportedTotal = res.pagination?.total ?? res.total ?? null
+      if (reportedTotal !== null && reportedTotal !== undefined) totalAvailable = reportedTotal
+      if (data.length < chunkSize || matches.length >= totalAvailable) break
+      pageCursor += 1
+    }
+
+    const norm = term.toLowerCase()
+    const filtered = matches.filter((c) => {
+      const owner = c.owner || owners.value.find((o) => o.id === c.ownerId) || {}
+      const store = c.store || stores.value.find((s) => s.id === c.storeId) || {}
+      const fields = [
+        owner.fullName,
+        owner.tin,
+        owner.phone,
+        store.storeNumber,
+        store.description,
+        c.certificateNumber,
+        c.issueDate,
+        c.expiryDate,
+        String(c.ownerId),
+        String(c.storeId),
+      ]
+      return fields.some((field) => field && field.toString().toLowerCase().includes(norm))
+    })
+    searchResults.value = filtered
+  } catch (e) {
+    errorMsg.value = e?.response?.data?.message || 'Shartnoma qidirishda xatolik'
+    searchResults.value = []
   } finally {
     loading.value = false
   }
@@ -193,7 +258,8 @@ onMounted(async () => {
 })
 watch(statusFilter, async () => {
   page.value = 1
-  await fetchData()
+  if (searchActive.value) await runSearch()
+  else await fetchData()
 })
 
 
@@ -241,6 +307,16 @@ watch(ownerSearch, (q) => {
 watch(storeSearch, (q) => {
   if (storeDebounceId) clearTimeout(storeDebounceId)
   storeDebounceId = setTimeout(() => fetchStoreOptions(q?.trim() || ''), 250)
+})
+
+let searchDebounceId
+watch(searchTerm, (q) => {
+  if (searchDebounceId) clearTimeout(searchDebounceId)
+  searchDebounceId = setTimeout(() => {
+    const term = (q || '').trim()
+    if (term.length >= SEARCH_MIN_LENGTH) runSearch()
+    else searchResults.value = null
+  }, 300)
 })
 
 const filteredStores = computed(() => {
@@ -345,13 +421,24 @@ async function exportContractTransactionsCSV() {
 
       <CardBox class="mb-4">
         <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div class="flex gap-3 items-end">
+          <div class="flex flex-wrap gap-3 items-end">
             <FormField label="Holati">
               <select v-model="statusFilter" class="rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100">
                 <option value="active">Faol</option>
                 <option value="archived">Arxivlangan</option>
                 <option value="all">Barchasi</option>
               </select>
+            </FormField>
+            <FormField label="Qidirish (kamida 2 belgi)">
+              <div class="space-y-1">
+                <FormControl
+                  v-model="searchTerm"
+                  placeholder="Ega, do'kon, guvohnoma yoki STIR"
+                />
+                <div v-if="showShortSearchHint" class="text-xs text-gray-500">
+                  Kamida {{ SEARCH_MIN_LENGTH }} ta belgi kiriting
+                </div>
+              </div>
             </FormField>
             <BaseButton color="info" outline :disabled="loading" label="Eksport (Shartnomalar)" @click="exportContractsCSV" />
             <BaseButton color="info" outline :disabled="loading" label="Eksport (Tranzaksiyalar)" @click="exportContractTransactionsCSV" />
@@ -379,18 +466,20 @@ async function exportContractTransactionsCSV() {
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td colspan="7" class="px-4 py-6 text-center">Yuklanmoqda...</td>
+                <td colspan="8" class="px-4 py-6 text-center">Yuklanmoqda...</td>
               </tr>
-              <tr v-else-if="!items.length">
-                <td colspan="7" class="px-4 py-6 text-center">Ma'lumot topilmadi</td>
+              <tr v-else-if="!displayItems.length">
+                <td colspan="8" class="px-4 py-6 text-center">
+                  {{ searchActive ? "Qidiruv bo'yicha natija topilmadi" : "Ma'lumot topilmadi" }}
+                </td>
               </tr>
-              <template v-for="it in items" :key="it.id">
+              <template v-else v-for="it in displayItems" :key="it.id">
                 <tr class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
                   <td class="px-4 py-2">
-                    {{ owners.find((o) => o.id === it.ownerId)?.fullName || it.ownerId }}
+                    {{ it.owner?.fullName || owners.find((o) => o.id === it.ownerId)?.fullName || it.ownerId }}
                   </td>
                   <td class="px-4 py-2">
-                    {{ stores.find((s) => s.id === it.storeId)?.storeNumber || it.storeId }}
+                    {{ it.store?.storeNumber || stores.find((s) => s.id === it.storeId)?.storeNumber || it.storeId }}
                   </td>
                   <td class="px-4 py-2">{{ it.shopMonthlyFee }}</td>
                   <td class="px-4 py-2">{{ it.issueDate ? it.issueDate.substring(0, 10) : '-' }}</td>
@@ -460,8 +549,11 @@ async function exportContractTransactionsCSV() {
           </table>
         </div>
         <div class="flex items-center justify-between px-4 py-3">
-          <div>Jami: {{ total }}</div>
-          <div class="flex items-center gap-2">
+          <div>Jami: {{ displayTotal }}</div>
+          <div v-if="searchActive" class="text-sm text-gray-600 dark:text-gray-300">
+            Qidiruv natijalari ko'rsatilmoqda
+          </div>
+          <div v-else class="flex items-center gap-2">
             <BaseButton
               :disabled="page <= 1 || loading"
               label="Oldingi"

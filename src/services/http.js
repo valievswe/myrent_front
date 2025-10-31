@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 // Base URL points to Nest global prefix
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://https://103.102.46.20/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 export const http = axios.create({
   baseURL: API_BASE_URL,

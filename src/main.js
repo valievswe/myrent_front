@@ -15,7 +15,8 @@ createApp(App).use(router).use(pinia).mount('#app')
 // Simple auth guard: require token for protected routes
 router.beforeEach((to) => {
   const token = localStorage.getItem('access_token')
-  if (to.path !== '/login' && !token) return { path: '/login' }
+  const isPublicRoute = to.meta?.public || to.path === '/login'
+  if (!isPublicRoute && !token) return { path: '/login' }
   if (to.path === '/login' && token) return { path: '/dashboard' }
 })
 
