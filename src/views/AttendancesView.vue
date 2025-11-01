@@ -113,11 +113,22 @@ async function removeItem(it) {
 
 async function pay(it) {
   try {
-    const { url } = await getAttendancePayUrl(it.id, type = window.location.origin.split("//")[1] == "myrent.uz"? "payme": undefined )
-    if (url) window.open(url, '_blank', 'noopener')
+    // ✅ Determine payment type (use "payme" for main domain, otherwise "click")
+    const paymentType =
+      window.location.origin.includes("myrent.uz") ? "payme" : "click"
+
+    // ✅ Get the payment URL from API
+    const { url } = await getAttendancePayUrl(it.id, paymentType)
+
+    // ✅ Open in new tab if URL is returned
+    if (url) {
+      window.open(url, "_blank", "noopener")
+    } else {
+      alert("To‘lov havolasi topilmadi")
+    }
   } catch (e) {
     console.error(e)
-    alert('To\'lov havolasini olishda xatolik')
+    alert("To‘lov havolasini olishda xatolik yuz berdi")
   }
 }
 
