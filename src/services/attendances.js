@@ -15,12 +15,12 @@ export async function updateAttendance(id, payload) {
   return data
 }
 
-export async function deleteAttendance(id, type = "click") {
-  const { data } = await http.delete(`/attendances/${id}/?type=${type}`)
+export async function deleteAttendance(id) {
+  const { data } = await http.delete(`/attendances/${id}`)
   return data
 }
 
-export async function getAttendancePayUrl(id) {
-  const { data } = await http.get(`/attendances/${id}/pay`)
+export async function getAttendancePayUrl(id, type = "click") {
+  const { data } = await http.get(`/attendances/${id}/pay/?type=${type}`)
   return data
 }
