@@ -204,7 +204,7 @@ async function preloadSections() {
 
 async function openPayLink(attendance) {
   try {
-    const { url } = await getAttendancePayUrl(attendance.id)
+    const { url } = await getAttendancePayUrl(attendance.id, )
     if (url) window.open(url, '_blank', 'noopener')
   } catch (e) {
     console.error(e)
