@@ -110,9 +110,10 @@ async function removeItem(it) {
   }
 }
 
+
 async function pay(it) {
   try {
-    const { url } = await getAttendancePayUrl(it.id)
+    const { url } = await getAttendancePayUrl(it.id, type = window.location.origin.split("//")[1] == "myrent.uz"? "payme": undefined )
     if (url) window.open(url, '_blank', 'noopener')
   } catch (e) {
     console.error(e)

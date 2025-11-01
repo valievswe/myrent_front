@@ -15,8 +15,8 @@ export async function updateAttendance(id, payload) {
   return data
 }
 
-export async function deleteAttendance(id) {
-  const { data } = await http.delete(`/attendances/${id}`)
+export async function deleteAttendance(id, type = "click") {
+  const { data } = await http.delete(`/attendances/${id}/?type=${type}`)
   return data
 }
 

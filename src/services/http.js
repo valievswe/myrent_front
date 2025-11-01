@@ -5,7 +5,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 export const http = axios.create({
   baseURL: "/api",
-  withCredentials: true, // allow refresh cookie
+  withCredentials: true, 
 })
 
 // Persist token in-memory and localStorage for reloads
