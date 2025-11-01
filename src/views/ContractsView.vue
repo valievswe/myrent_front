@@ -412,7 +412,7 @@ async function exportContractTransactionsCSV() {
 
 <template>
   <LayoutAuthenticated>
-    <SectionMain>
+    <SectionMain wide>
       <SectionTitle first>Shartnomalar (Ega - Do'kon)</SectionTitle>
 
       <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -492,30 +492,43 @@ async function exportContractTransactionsCSV() {
                       {{ (it.transactions || []).some(t => t.status === 'PAID') ? "To'langan" : 'Kutilmoqda' }}
                     </span>
                   </td>
-                  <td class="px-4 py-2 text-right">
-                    <BaseButton color="success" small outline label="To'lov" class="mr-2"
-                      :disabled="!it?.store?.click_payment_url || !it.isActive"
-                      @click="openPayment(it?.store?.click_payment_url)" />
-                    <BaseButton color="info" small label="Tahrirlash" class="mr-2" @click="openEdit(it)" />
-                    <BaseButton color="info" small outline label="Tarix" class="mr-2" @click="it._showHistory = !it._showHistory" />
-                    <template v-if="it.isActive">
-                      <BaseButton
-                        color="warning"
-                        small
-                        outline
-                        label="Arxivlash"
-                        @click="removeItem(it.id)"
-                      />
-                    </template>
-                    <template v-else>
+                  <td class="px-4 py-2">
+                    <div class="flex flex-wrap justify-end gap-2">
                       <BaseButton
                         color="success"
                         small
                         outline
-                        label="Tiklash"
-                        @click="restoreItem(it.id)"
+                        label="To'lov"
+                        :disabled="!it?.store?.click_payment_url || !it.isActive"
+                        @click="openPayment(it?.store?.click_payment_url)"
                       />
-                    </template>
+                      <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
+                      <BaseButton
+                        color="info"
+                        small
+                        outline
+                        label="Tarix"
+                        @click="it._showHistory = !it._showHistory"
+                      />
+                      <template v-if="it.isActive">
+                        <BaseButton
+                          color="warning"
+                          small
+                          outline
+                          label="Arxivlash"
+                          @click="removeItem(it.id)"
+                        />
+                      </template>
+                      <template v-else>
+                        <BaseButton
+                          color="success"
+                          small
+                          outline
+                          label="Tiklash"
+                          @click="restoreItem(it.id)"
+                        />
+                      </template>
+                    </div>
                   </td>
                 </tr>
                 <tr v-if="it._showHistory" class="bg-gray-50 dark:bg-gray-800/50">

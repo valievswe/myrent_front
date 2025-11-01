@@ -97,7 +97,7 @@ watch(() => search.value, () => {
 
 <template>
   <LayoutAuthenticated>
-    <SectionMain>
+    <SectionMain wide>
       <SectionTitle first>Tadbirkorlar</SectionTitle>
 
       <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -131,10 +131,10 @@ watch(() => search.value, () => {
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td colspan="5" class="px-4 py-6 text-center">Yuklanmoqda...</td>
+                <td colspan="6" class="px-4 py-6 text-center">Yuklanmoqda...</td>
               </tr>
               <tr v-else-if="!items.length">
-                <td colspan="5" class="px-4 py-6 text-center">Ma'lumot topilmadi</td>
+                <td colspan="6" class="px-4 py-6 text-center">Ma'lumot topilmadi</td>
               </tr>
               <tr
                 v-for="it in items"
@@ -153,16 +153,17 @@ watch(() => search.value, () => {
                   <span v-else>-</span>
                 </td>
                 <td class="px-4 py-2">{{ it.address }}</td>
-                <td class="px-4 py-2 text-right">
-                  <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
-                  <BaseButton
-                    color="danger"
-                    small
-                    outline
-                    label="O'chirish"
-                    class="ml-2"
-                    @click="removeItem(it.id)"
-                  />
+                <td class="px-4 py-2">
+                  <div class="flex flex-wrap justify-end gap-2">
+                    <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
+                    <BaseButton
+                      color="danger"
+                      small
+                      outline
+                      label="O'chirish"
+                      @click="removeItem(it.id)"
+                    />
+                  </div>
                 </td>
               </tr>
             </tbody>

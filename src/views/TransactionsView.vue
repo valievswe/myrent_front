@@ -337,7 +337,7 @@ onMounted(async () => {
 
 <template>
   <LayoutAuthenticated>
-    <SectionMain>
+    <SectionMain wide>
       <SectionTitle first>Tranzaksiyalar</SectionTitle>
 
       <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -349,38 +349,38 @@ onMounted(async () => {
 
       <div class="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <CardBox>
-          <div class="p-4">
+          <div class="p-6">
             <div class="text-xs text-gray-500">Jami</div>
-            <div class="text-2xl font-semibold">{{ totals.total }}</div>
+            <div class="text-3xl font-semibold md:text-4xl">{{ totals.total }}</div>
             <div class="text-xs text-gray-500">Umumiy summa: {{ totals.amount }}</div>
           </div>
         </CardBox>
         <CardBox>
-          <div class="p-4">
+          <div class="p-6">
             <div class="text-xs text-green-600">To'langan</div>
-            <div class="text-2xl font-semibold text-green-600">{{ totals.paid }}</div>
+            <div class="text-3xl font-semibold text-green-600 md:text-4xl">{{ totals.paid }}</div>
             <div class="text-xs text-green-600">Summasi: {{ totals.paidAmount }}</div>
           </div>
         </CardBox>
         <CardBox>
-          <div class="p-4">
+          <div class="p-6">
             <div class="text-xs text-amber-600">Kutilmoqda</div>
-            <div class="text-2xl font-semibold text-amber-600">{{ totals.pending }}</div>
+            <div class="text-3xl font-semibold text-amber-600 md:text-4xl">{{ totals.pending }}</div>
           </div>
         </CardBox>
         <CardBox>
-          <div class="p-4">
+          <div class="p-6">
             <div class="text-xs text-red-600">Bekor qilingan</div>
-            <div class="text-2xl font-semibold text-red-600">{{ totals.cancelled }}</div>
+            <div class="text-3xl font-semibold text-red-600 md:text-4xl">{{ totals.cancelled }}</div>
           </div>
         </CardBox>
       </div>
 
       <CardBox class="mb-4">
-        <div class="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
+        <div class="flex flex-col gap-6 p-6 lg:flex-row lg:items-start lg:justify-between">
           <div class="flex-1">
             <div class="text-xs uppercase tracking-wide text-gray-500">Do'kon shartnomalari</div>
-            <div class="mt-1 text-2xl font-semibold text-red-600">
+            <div class="mt-1 text-3xl font-semibold text-red-600 md:text-4xl">
               {{ formatAmount(contractDebtSummary.debt) }}
             </div>
             <div class="mt-1 text-xs text-gray-500">
@@ -393,7 +393,7 @@ onMounted(async () => {
           </div>
           <div class="flex-1">
             <div class="text-xs uppercase tracking-wide text-gray-500">Rasta yig'imlari</div>
-            <div class="mt-1 text-2xl font-semibold text-red-600">
+            <div class="mt-1 text-3xl font-semibold text-red-600 md:text-4xl">
               {{ formatAmount(stallDebtSummary.debt) }}
             </div>
             <div class="mt-1 text-xs text-gray-500">
@@ -531,23 +531,24 @@ onMounted(async () => {
                   <td class="px-4 py-2">
                     {{ it.createdAt ? it.createdAt.substring(0, 19).replace('T', ' ') : '-' }}
                   </td>
-                  <td class="px-4 py-2 text-right">
-                    <BaseButton
-                      color="info"
-                      small
-                      outline
-                      label="Batafsil"
-                      class="mr-2"
-                      @click="toggleExpand(it.id)"
-                    />
-                    <BaseButton color="info" small label="Tahrirlash" class="mr-2" @click="openEdit(it)" />
-                    <BaseButton
-                      color="danger"
-                      small
-                      outline
-                      label="O'chirish"
-                      @click="removeItem(it)"
-                    />
+                  <td class="px-4 py-2">
+                    <div class="flex flex-wrap justify-end gap-2">
+                      <BaseButton
+                        color="info"
+                        small
+                        outline
+                        label="Batafsil"
+                        @click="toggleExpand(it.id)"
+                      />
+                      <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
+                      <BaseButton
+                        color="danger"
+                        small
+                        outline
+                        label="O'chirish"
+                        @click="removeItem(it)"
+                      />
+                    </div>
                   </td>
                 </tr>
                 <tr v-if="expandedId === it.id" class="bg-gray-50 text-sm dark:bg-gray-800/60">

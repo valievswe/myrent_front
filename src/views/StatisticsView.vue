@@ -190,7 +190,7 @@ onMounted(async () => {
 
 <template>
   <LayoutAuthenticated>
-    <SectionMain>
+    <SectionMain wide>
       <SectionTitle first>Statistika va To'lovlar Tahlili</SectionTitle>
 
       <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">{{ errorMsg }}</div>
@@ -200,23 +200,23 @@ onMounted(async () => {
 
       <div class="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
         <CardBox>
-          <div class="p-4">
+          <div class="p-6">
             <div class="text-sm text-gray-500">Bugun (Jami)</div>
-            <div class="mt-1 text-2xl font-semibold">{{ dailyAll.revenue }}</div>
+            <div class="mt-1 text-3xl font-semibold md:text-4xl">{{ dailyAll.revenue }}</div>
             <div class="text-xs text-gray-500">Tranzaksiyalar: {{ dailyAll.count }}</div>
           </div>
         </CardBox>
         <CardBox>
-          <div class="p-4">
+          <div class="p-6">
             <div class="text-sm text-gray-500">Bugun (Rastalar)</div>
-            <div class="mt-1 text-2xl font-semibold">{{ dailyStalls.revenue }}</div>
+            <div class="mt-1 text-3xl font-semibold md:text-4xl">{{ dailyStalls.revenue }}</div>
             <div class="text-xs text-gray-500">Tranzaksiyalar: {{ dailyStalls.count }}</div>
           </div>
         </CardBox>
         <CardBox>
-          <div class="p-4">
+          <div class="p-6">
             <div class="text-sm text-gray-500">Bugun (Do'konlar)</div>
-            <div class="mt-1 text-2xl font-semibold">{{ dailyStores.revenue }}</div>
+            <div class="mt-1 text-3xl font-semibold md:text-4xl">{{ dailyStores.revenue }}</div>
             <div class="text-xs text-gray-500">Tranzaksiyalar: {{ dailyStores.count }}</div>
           </div>
         </CardBox>
@@ -224,33 +224,33 @@ onMounted(async () => {
 
       <div class="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
         <CardBox>
-          <div class="p-4">
+          <div class="p-6">
             <div class="text-sm text-gray-500">Joriy oy (Jami)</div>
-            <div class="mt-1 text-2xl font-semibold">{{ monthRevenueAll.revenue }}</div>
+            <div class="mt-1 text-3xl font-semibold md:text-4xl">{{ monthRevenueAll.revenue }}</div>
             <div class="text-xs text-gray-500">Tranzaksiyalar: {{ monthlyAll.count }}</div>
           </div>
         </CardBox>
         <CardBox>
-          <div class="p-4">
+          <div class="p-6">
             <div class="text-sm text-gray-500">Joriy oy (Rastalar)</div>
-            <div class="mt-1 text-2xl font-semibold">{{ monthRevenueStalls.revenue }}</div>
+            <div class="mt-1 text-3xl font-semibold md:text-4xl">{{ monthRevenueStalls.revenue }}</div>
             <div class="text-xs text-gray-500">Tranzaksiyalar: {{ monthlyStalls.count }}</div>
           </div>
         </CardBox>
         <CardBox>
-          <div class="p-4">
+          <div class="p-6">
             <div class="text-sm text-gray-500">Joriy oy (Do'konlar)</div>
-            <div class="mt-1 text-2xl font-semibold">{{ monthRevenueStores.revenue }}</div>
+            <div class="mt-1 text-3xl font-semibold md:text-4xl">{{ monthRevenueStores.revenue }}</div>
             <div class="text-xs text-gray-500">Tranzaksiyalar: {{ monthlyStores.count }}</div>
           </div>
         </CardBox>
       </div>
 
       <CardBox class="mb-6">
-        <div class="flex flex-col gap-4 p-4 md:flex-row md:items-start md:justify-between">
+        <div class="flex flex-col gap-6 p-6 md:flex-row md:items-start md:justify-between">
           <div class="flex-1">
             <div class="text-xs uppercase tracking-wide text-gray-500">Do'kon shartnomalari</div>
-            <div class="mt-1 text-2xl font-semibold text-red-600">
+            <div class="mt-1 text-3xl font-semibold text-red-600 md:text-4xl">
               {{ formatAmount(contractDebtSummary.debt) }}
             </div>
             <div class="mt-1 text-xs text-gray-500">
@@ -263,7 +263,7 @@ onMounted(async () => {
           </div>
           <div class="flex-1">
             <div class="text-xs uppercase tracking-wide text-gray-500">Rasta yig'imlari</div>
-            <div class="mt-1 text-2xl font-semibold text-red-600">
+            <div class="mt-1 text-3xl font-semibold text-red-600 md:text-4xl">
               {{ formatAmount(stallDebtSummary.debt) }}
             </div>
             <div class="mt-1 text-xs text-gray-500">
@@ -286,9 +286,9 @@ onMounted(async () => {
       </CardBox>
 
       <CardBox>
-        <div class="p-4">
+        <div class="p-6">
           <div class="mb-3 text-sm font-medium">Joriy oy: kunlik tushum (Rasta vs Do'kon)</div>
-          <div style="height: 280px">
+          <div style="height: 320px">
             <LineChart :data="chartData" />
           </div>
         </div>
