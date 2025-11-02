@@ -4,8 +4,8 @@ import axios from 'axios'
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 export const http = axios.create({
-  baseURL: API_BASE_URL,
-  withCredentials: true, // allow refresh cookie
+  baseURL: "/api",
+  withCredentials: true, 
 })
 
 // Persist token in-memory and localStorage for reloads
@@ -69,7 +69,7 @@ http.interceptors.response.use(
         pendingQueue = []
         // clear token and force login
         setAccessToken(null)
-        try { window.location.hash = '#/login' } catch (_) {}
+        try { window.location.hash = '#/login' } catch (_) { }
       } finally {
         isRefreshing = false
       }

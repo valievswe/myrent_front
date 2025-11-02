@@ -25,7 +25,13 @@ const sections = ref([])
 
 const showForm = ref(false)
 const editingId = ref(null)
-const form = ref({ area: null, saleTypeId: null, sectionId: null, description: '' })
+const form = ref({
+  area: null,
+  saleTypeId: null,
+  sectionId: null,
+  description: '',
+  stallNumber: '',
+})
 const expandedStallId = ref(null)
 const attendanceMap = ref({})
 
@@ -63,7 +69,7 @@ async function preloadRefs() {
 
 function openCreate() {
   editingId.value = null
-  form.value = { area: null, saleTypeId: null, sectionId: null, description: '' }
+  form.value = { area: null, saleTypeId: null, sectionId: null, description: '', stallNumber: '' }
   showForm.value = true
 }
 
@@ -74,6 +80,7 @@ function openEdit(item) {
     saleTypeId: item.saleTypeId ?? null,
     sectionId: item.sectionId ?? null,
     description: item.description || '',
+    stallNumber: item.stallNumber || '',
   }
   showForm.value = true
 }
@@ -87,9 +94,10 @@ async function submitForm() {
       saleTypeId: form.value.saleTypeId ? Number(form.value.saleTypeId) : null,
       sectionId: form.value.sectionId ? Number(form.value.sectionId) : null,
       description: form.value.description || undefined,
+      stallNumber: form.value.stallNumber || undefined,
     }
-    if (!payload.area || !payload.saleTypeId || !payload.sectionId) {
-      throw new Error("Maydon, Sotuv turi va Bo'lim majburiy")
+    if (!payload.area || !payload.saleTypeId || !payload.sectionId || !payload.stallNumber) {
+      throw new Error("Maydon, Sotuv turi, Bo'lim va Rasta raqami majburiy")
     }
     if (editingId.value) await updateStall(editingId.value, payload)
     else await createStall(payload)
@@ -132,6 +140,7 @@ onMounted(async () => {
   await preloadRefs()
   await fetchData()
 })
+
 let debounceId
 watch(
   () => search.value,
@@ -168,6 +177,7 @@ watch(
           <table class="w-full table-auto">
             <thead>
               <tr>
+                <th class="px-4 py-2 text-left">Rasta raqami</th>
                 <th class="px-4 py-2 text-left">Bo'lim</th>
                 <th class="px-4 py-2 text-left">Sotuv turi</th>
                 <th class="px-4 py-2 text-left">Maydon (kv m)</th>
@@ -179,13 +189,14 @@ watch(
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td colspan="7" class="px-4 py-6 text-center">Yuklanmoqda...</td>
+                <td colspan="8" class="px-4 py-6 text-center">Yuklanmoqda...</td>
               </tr>
               <tr v-else-if="!items.length">
-                <td colspan="7" class="px-4 py-6 text-center">Ma'lumot topilmadi</td>
+                <td colspan="8" class="px-4 py-6 text-center">Ma'lumot topilmadi</td>
               </tr>
               <template v-for="it in items" :key="it.id">
                 <tr class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
+                  <td class="px-4 py-2">{{ it.stallNumber }}</td>
                   <td class="px-4 py-2">
                     {{ sections.find((s) => s.id === it.sectionId)?.name || it.sectionId }}
                   </td>
@@ -222,7 +233,7 @@ watch(
                   </td>
                 </tr>
                 <tr v-if="expandedStallId === it.id">
-                  <td colspan="7" class="bg-gray-50 px-4 py-3 dark:bg-gray-800">
+                  <td colspan="8" class="bg-gray-50 px-4 py-3 dark:bg-gray-800">
                     <div class="mb-2 text-sm font-semibold">So'nggi attendance</div>
                     <div v-if="!attendanceMap[it.id]?.length" class="text-sm text-gray-500">Ma'lumot yo'q</div>
                     <div v-else>
@@ -281,6 +292,7 @@ watch(
               <option v-for="s in sections" :key="s.id" :value="s.id">{{ s.name }}</option>
             </select>
           </FormField>
+
           <FormField label="Sotuv turi">
             <select
               v-model="form.saleTypeId"
@@ -292,6 +304,7 @@ watch(
               </option>
             </select>
           </FormField>
+
           <FormField label="Maydon (kv m)">
             <FormControl
               v-model="form.area"
@@ -301,13 +314,21 @@ watch(
               placeholder="Masalan: 12"
             />
           </FormField>
+
+          <!-- 🔹 New Stall Number Field -->
+          <FormField label="Rasta raqami">
+            <FormControl v-model="form.stallNumber" placeholder="Masalan: A-12 yoki 103" />
+          </FormField>
+
           <FormField label="Izoh">
             <FormControl v-model="form.description" placeholder="Qisqacha izoh" />
           </FormField>
+
           <div class="rounded border border-gray-200 p-3 md:col-span-2 dark:border-gray-700">
             Hisoblangan to'lov: <b>{{ computedFee }}</b>
           </div>
         </div>
+
         <template #footer>
           <div class="flex justify-end gap-2">
             <BaseButton
