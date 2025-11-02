@@ -86,6 +86,17 @@ function openPayment(url) {
   }
 }
 
+function resolveStore(contract) {
+  if (contract?.store) return contract.store
+  return stores.value.find((s) => s.id === contract?.storeId) || null
+}
+
+function getPaymentUrl(contract) {
+  const store = resolveStore(contract)
+  if (!store) return ''
+  return store.payme_payment_url || store.click_payment_url || ''
+}
+
 async function fetchData() {
   loading.value = true
   errorMsg.value = ''
@@ -499,8 +510,8 @@ async function exportContractTransactionsCSV() {
                         small
                         outline
                         label="To'lov"
-                        :disabled="!it?.store?.click_payment_url || !it.isActive"
-                        @click="openPayment(it?.store?.click_payment_url)"
+                        :disabled="!getPaymentUrl(it) || !it.isActive"
+                        @click="openPayment(getPaymentUrl(it))"
                       />
                       <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
                       <BaseButton
