@@ -20,7 +20,7 @@ export async function deleteAttendance(id) {
   return data
 }
 
-export async function getAttendancePayUrl(id, type = "click") {
+export async function getAttendancePayUrl(id, type = 'click') {
   const { data } = await http.get(`/attendances/${id}/pay/?type=${type}`)
   return data
 }

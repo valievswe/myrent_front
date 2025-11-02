@@ -7,7 +7,13 @@ import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
-import { listAttendances, createAttendance, updateAttendance, deleteAttendance, getAttendancePayUrl } from '@/services/attendances'
+import {
+  listAttendances,
+  createAttendance,
+  updateAttendance,
+  deleteAttendance,
+  getAttendancePayUrl,
+} from '@/services/attendances'
 import { listStalls } from '@/services/stalls'
 import { listSections } from '@/services/sections'
 import { listSaleTypes } from '@/services/saleTypes'
@@ -22,12 +28,14 @@ const total = ref(0)
 
 const showForm = ref(false)
 const editingId = ref(null)
-const form = ref({ date: new Date().toISOString().substring(0,10), stallId: null })
+const form = ref({ date: new Date().toISOString().substring(0, 10), stallId: null })
 const stalls = ref([])
 const stallSearch = ref('')
 const stallOptions = ref([])
 const selectedStallObj = ref(null)
-const selectedStall = computed(() => selectedStallObj.value || stalls.value.find(s => s.id === Number(form.value.stallId)))
+const selectedStall = computed(
+  () => selectedStallObj.value || stalls.value.find((s) => s.id === Number(form.value.stallId)),
+)
 const suggestedAmount = computed(() => {
   const s = selectedStall.value
   if (!s) return null
@@ -52,13 +60,15 @@ async function fetchData() {
 
 onMounted(async () => {
   // Optional preload of some stalls; search will handle large lists dynamically
-  try { stalls.value = (await listStalls({ page:1, limit: 50 })).data || [] } catch {}
+  try {
+    stalls.value = (await listStalls({ page: 1, limit: 50 })).data || []
+  } catch {}
   await fetchData()
 })
 
 function openCreate() {
   editingId.value = null
-  form.value = { date: new Date().toISOString().substring(0,10), stallId: null }
+  form.value = { date: new Date().toISOString().substring(0, 10), stallId: null }
   stallSearch.value = ''
   stallOptions.value = []
   selectedStallObj.value = null
@@ -67,10 +77,10 @@ function openCreate() {
 
 function openEdit(it) {
   editingId.value = it.id
-  form.value = { date: it.date?.substring(0,10) || '', stallId: it.stallId }
+  form.value = { date: it.date?.substring(0, 10) || '', stallId: it.stallId }
   stallSearch.value = `#${it.stallId}`
   stallOptions.value = []
-  selectedStallObj.value = stalls.value.find(s => s.id === Number(it.stallId)) || null
+  selectedStallObj.value = stalls.value.find((s) => s.id === Number(it.stallId)) || null
   showForm.value = true
 }
 
@@ -82,8 +92,9 @@ async function submitForm() {
       date: form.value.date,
       stallId: form.value.stallId ? Number(form.value.stallId) : null,
     }
-    if (!payload.date || !payload.stallId) throw new Error("Sana va Rasta majburiy")
-    if (!suggestedAmount.value || suggestedAmount.value <= 0) throw new Error("Rasta to'lovi aniqlanmadi")
+    if (!payload.date || !payload.stallId) throw new Error('Sana va Rasta majburiy')
+    if (!suggestedAmount.value || suggestedAmount.value <= 0)
+      throw new Error("Rasta to'lovi aniqlanmadi")
     if (editingId.value) await updateAttendance(editingId.value, payload)
     else await createAttendance(payload)
     showForm.value = false
@@ -102,14 +113,15 @@ async function removeItem(it) {
   try {
     await deleteAttendance(it.id)
     await fetchData()
-    try { await loadAttendancesForDate() } catch {}
+    try {
+      await loadAttendancesForDate()
+    } catch {}
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || "O'chirishda xatolik"
   } finally {
     loading.value = false
   }
 }
-
 
 async function pay(it) {
   try {
@@ -119,13 +131,13 @@ async function pay(it) {
     const { url } = await getAttendancePayUrl(it.id, paymentType)
 
     if (url) {
-      window.open(url, "_blank", "noopener")
+      window.open(url, '_blank', 'noopener')
     } else {
-      alert("To‘lov havolasi topilmadi")
+      alert('To‘lov havolasi topilmadi')
     }
   } catch (e) {
     console.error(e)
-    alert("To‘lov havolasini olishda xatolik yuz berdi")
+    alert('To‘lov havolasini olishda xatolik yuz berdi')
   }
 }
 
@@ -170,8 +182,10 @@ const selectedSectionId = ref(null)
 const selectedSaleTypeId = ref(null)
 const displayedStalls = computed(() => {
   let list = stallsBulk.value || []
-  if (selectedSectionId.value) list = list.filter((s) => Number(s.sectionId) === Number(selectedSectionId.value))
-  if (selectedSaleTypeId.value) list = list.filter((s) => Number(s.saleTypeId) === Number(selectedSaleTypeId.value))
+  if (selectedSectionId.value)
+    list = list.filter((s) => Number(s.sectionId) === Number(selectedSectionId.value))
+  if (selectedSaleTypeId.value)
+    list = list.filter((s) => Number(s.saleTypeId) === Number(selectedSaleTypeId.value))
   return list
 })
 
@@ -183,7 +197,12 @@ function computedFeeFor(stall) {
 
 async function loadAttendancesForDate() {
   try {
-    const res = await listAttendances({ dateFrom: bulkDate.value, dateTo: bulkDate.value, page: 1, limit: 5000 })
+    const res = await listAttendances({
+      dateFrom: bulkDate.value,
+      dateTo: bulkDate.value,
+      page: 1,
+      limit: 5000,
+    })
     const map = {}
     for (const a of res.data || []) map[a.stallId] = a
     attendanceByStall.value = map
@@ -194,7 +213,11 @@ async function loadAttendancesForDate() {
 async function loadStallsBulk() {
   bulkLoading.value = true
   try {
-    const res = await listStalls({ search: stallSearchBulk.value, page: stallPage.value, limit: stallLimit.value })
+    const res = await listStalls({
+      search: stallSearchBulk.value,
+      page: stallPage.value,
+      limit: stallLimit.value,
+    })
     stallsBulk.value = res.data || []
     stallTotal.value = res.pagination?.total ?? res.total ?? stallsBulk.value.length
   } catch (e) {
@@ -208,8 +231,10 @@ async function selectAllAcrossFiltered() {
   try {
     const res = await listStalls({ search: stallSearchBulk.value, page: 1, limit: 5000 })
     let list = res.data || []
-    if (selectedSectionId.value) list = list.filter((s) => Number(s.sectionId) === Number(selectedSectionId.value))
-    if (selectedSaleTypeId.value) list = list.filter((s) => Number(s.saleTypeId) === Number(selectedSaleTypeId.value))
+    if (selectedSectionId.value)
+      list = list.filter((s) => Number(s.sectionId) === Number(selectedSectionId.value))
+    if (selectedSaleTypeId.value)
+      list = list.filter((s) => Number(s.saleTypeId) === Number(selectedSaleTypeId.value))
     const set = new Set(selectedStallIds.value)
     for (const it of list) set.add(it.id)
     selectedStallIds.value = set
@@ -248,7 +273,10 @@ async function loadHistory(stallId) {
   historyLoading.value = { ...historyLoading.value, [stallId]: true }
   try {
     const res = await listAttendances({ stallId, page: 1, limit: 30 })
-    historyByStall.value = { ...historyByStall.value, [stallId]: (res.data || []).sort((a,b) => new Date(b.date) - new Date(a.date)) }
+    historyByStall.value = {
+      ...historyByStall.value,
+      [stallId]: (res.data || []).sort((a, b) => new Date(b.date) - new Date(a.date)),
+    }
   } catch (e) {
     console.error(e)
   } finally {
@@ -324,8 +352,12 @@ watch([bulkDate, stallSearchBulk, stallPage, stallLimit], async () => {
   await loadStallsBulk()
 })
 onMounted(async () => {
-  try { sections.value = await listSections() } catch {}
-  try { saleTypes.value = await listSaleTypes() } catch {}
+  try {
+    sections.value = await listSections()
+  } catch {}
+  try {
+    saleTypes.value = await listSaleTypes()
+  } catch {}
   await loadAttendancesForDate()
   await loadStallsBulk()
 })
@@ -351,9 +383,26 @@ onMounted(async () => {
             </FormField>
           </div>
           <div class="flex gap-2">
-            <BaseButton color="success" :disabled="bulkLoading" label="Tanlanganlarga yaratish" @click="bulkCreate" />
-            <BaseButton color="info" outline :disabled="!selectedStallIds.size" label="Tanlovni tozalash" @click="clearSelected" />
-            <BaseButton color="info" outline :disabled="bulkLoading" label="Eksport (Kun)" @click="exportAttendancesCSV" />
+            <BaseButton
+              color="success"
+              :disabled="bulkLoading"
+              label="Tanlanganlarga yaratish"
+              @click="bulkCreate"
+            />
+            <BaseButton
+              color="info"
+              outline
+              :disabled="!selectedStallIds.size"
+              label="Tanlovni tozalash"
+              @click="clearSelected"
+            />
+            <BaseButton
+              color="info"
+              outline
+              :disabled="bulkLoading"
+              label="Eksport (Kun)"
+              @click="exportAttendancesCSV"
+            />
           </div>
         </div>
       </CardBox>
@@ -362,23 +411,47 @@ onMounted(async () => {
         <div class="px-4 py-3">
           <div class="flex flex-wrap items-center gap-3">
             <div class="text-sm text-gray-600 dark:text-gray-300">Filtrlar:</div>
-            <select v-model="selectedSectionId" class="w-56 rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100">
+            <select
+              v-model="selectedSectionId"
+              class="w-56 rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100"
+            >
               <option :value="null">Bo'lim: barchasi</option>
               <option v-for="sec in sections" :key="sec.id" :value="sec.id">{{ sec.name }}</option>
             </select>
-            <select v-model="selectedSaleTypeId" class="w-56 rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100">
+            <select
+              v-model="selectedSaleTypeId"
+              class="w-56 rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100"
+            >
               <option :value="null">Sotuv turi: barchasi</option>
               <option v-for="st in saleTypes" :key="st.id" :value="st.id">{{ st.name }}</option>
             </select>
-            <BaseButton color="info" outline :disabled="!displayedStalls.length" label="Sahifadagi barchasini belgilash" @click="selectAllPage" />
-            <BaseButton color="info" :disabled="bulkLoading" label="Filtrlangan (hammasi) belgilash" @click="selectAllAcrossFiltered" />
+            <BaseButton
+              color="info"
+              outline
+              :disabled="!displayedStalls.length"
+              label="Sahifadagi barchasini belgilash"
+              @click="selectAllPage"
+            />
+            <BaseButton
+              color="info"
+              :disabled="bulkLoading"
+              label="Filtrlangan (hammasi) belgilash"
+              @click="selectAllAcrossFiltered"
+            />
           </div>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full table-auto">
             <thead>
               <tr>
-                <th class="px-4 py-2 text-left"><input type="checkbox" @change="($event) => ($event.target.checked ? selectAllPage() : clearSelected())" /></th>
+                <th class="px-4 py-2 text-left">
+                  <input
+                    type="checkbox"
+                    @change="
+                      ($event) => ($event.target.checked ? selectAllPage() : clearSelected())
+                    "
+                  />
+                </th>
                 <th class="px-4 py-2 text-left">Rasta</th>
                 <th class="px-4 py-2 text-left">Maydon (kv m)</th>
                 <th class="px-4 py-2 text-left">Presskurant</th>
@@ -396,24 +469,27 @@ onMounted(async () => {
               </tr>
               <template v-for="s in displayedStalls" :key="s.id">
                 <tr class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
-                  <td class="px-4 py-2"><input type="checkbox" :checked="isSelected(s)" @change="() => toggleSelect(s)" /></td>
+                  <td class="px-4 py-2">
+                    <input
+                      type="checkbox"
+                      :checked="isSelected(s)"
+                      @change="() => toggleSelect(s)"
+                    />
+                  </td>
                   <td class="px-4 py-2">#{{ s.id }} - {{ s.description || '' }}</td>
                   <td class="px-4 py-2">{{ s.area }}</td>
                   <td class="px-4 py-2">{{ s.SaleType?.tax }}</td>
                   <td class="px-4 py-2">{{ computedFeeFor(s) }}</td>
                   <td class="px-4 py-2">
                     <span v-if="statusForStall(s) === 'PAID'" class="text-green-600">PAID</span>
-                    <span v-else-if="statusForStall(s) === 'UNPAID'" class="text-red-600">UNPAID</span>
+                    <span v-else-if="statusForStall(s) === 'UNPAID'" class="text-red-600"
+                      >UNPAID</span
+                    >
                     <span v-else class="text-gray-500">-</span>
                   </td>
                   <td class="px-4 py-2 text-right">
                     <template v-if="!attendanceByStall[s.id]">
-                      <BaseButton
-                        color="success"
-                        small
-                        label="Yaratish"
-                        @click="createOne(s)"
-                      />
+                      <BaseButton color="success" small label="Yaratish" @click="createOne(s)" />
                     </template>
                     <template v-else-if="attendanceByStall[s.id]?.status === 'UNPAID'">
                       <BaseButton
@@ -439,14 +515,28 @@ onMounted(async () => {
                     <template v-else>
                       <span class="text-gray-500">-</span>
                     </template>
-                    <BaseButton color="info" small outline label="Tarix" class="ml-2" @click="toggleHistory(s)" />
+                    <BaseButton
+                      color="info"
+                      small
+                      outline
+                      label="Tarix"
+                      class="ml-2"
+                      @click="toggleHistory(s)"
+                    />
                   </td>
                 </tr>
                 <tr v-if="historyOpen[s.id]" class="bg-gray-50 dark:bg-gray-800/50">
                   <td colspan="7" class="px-4 py-2">
-                    <div class="text-sm font-medium mb-2">Rasta to'lov tarixi (#{{ s.id }})</div>
-                    <div v-if="(historyLoading[s.id])" class="text-xs text-gray-500">Yuklanmoqda...</div>
-                    <div v-else-if="!(historyByStall[s.id] || []).length" class="text-xs text-gray-500">Tarix yo'q</div>
+                    <div class="mb-2 text-sm font-medium">Rasta to'lov tarixi (#{{ s.id }})</div>
+                    <div v-if="historyLoading[s.id]" class="text-xs text-gray-500">
+                      Yuklanmoqda...
+                    </div>
+                    <div
+                      v-else-if="!(historyByStall[s.id] || []).length"
+                      class="text-xs text-gray-500"
+                    >
+                      Tarix yo'q
+                    </div>
                     <div v-else class="overflow-x-auto">
                       <table class="w-full text-sm">
                         <thead>
@@ -457,11 +547,20 @@ onMounted(async () => {
                           </tr>
                         </thead>
                         <tbody>
-                          <tr v-for="a in (historyByStall[s.id] || [])" :key="a.id">
-                            <td class="px-2 py-1">{{ a.date ? a.date.substring(0,10) : '-' }}</td>
+                          <tr v-for="a in historyByStall[s.id] || []" :key="a.id">
+                            <td class="px-2 py-1">{{ a.date ? a.date.substring(0, 10) : '-' }}</td>
                             <td class="px-2 py-1">{{ a.amount }}</td>
                             <td class="px-2 py-1">
-                              <span :class="a.status === 'PAID' ? 'text-green-600' : a.status === 'UNPAID' ? 'text-red-600' : 'text-gray-600'">{{ a.status }}</span>
+                              <span
+                                :class="
+                                  a.status === 'PAID'
+                                    ? 'text-green-600'
+                                    : a.status === 'UNPAID'
+                                      ? 'text-red-600'
+                                      : 'text-gray-600'
+                                "
+                                >{{ a.status }}</span
+                              >
                             </td>
                           </tr>
                         </tbody>
@@ -476,15 +575,25 @@ onMounted(async () => {
         <div class="flex items-center justify-between px-4 py-3">
           <div>Jami: {{ displayedStalls.length }} (umumiy: {{ stallTotal }})</div>
           <div class="flex items-center gap-2">
-            <BaseButton :disabled="stallPage <= 1 || bulkLoading" label="Oldingi" @click="(stallPage--, loadStallsBulk())" />
+            <BaseButton
+              :disabled="stallPage <= 1 || bulkLoading"
+              label="Oldingi"
+              @click="(stallPage--, loadStallsBulk())"
+            />
             <span>Sahifa {{ stallPage }}</span>
-            <BaseButton :disabled="stallsBulk.length < stallLimit || bulkLoading" label="Keyingi" @click="(stallPage++, loadStallsBulk())" />
+            <BaseButton
+              :disabled="stallsBulk.length < stallLimit || bulkLoading"
+              label="Keyingi"
+              @click="(stallPage++, loadStallsBulk())"
+            />
           </div>
         </div>
       </CardBox>
 
       <CardBox v-if="showForm" class="mt-4" is-form @submit.prevent="submitForm">
-        <SectionTitle>{{ editingId ? 'Attendance tahrirlash' : 'Attendance yaratish' }}</SectionTitle>
+        <SectionTitle>{{
+          editingId ? 'Attendance tahrirlash' : 'Attendance yaratish'
+        }}</SectionTitle>
         <div class="grid gap-4 md:grid-cols-2">
           <FormField label="Sana">
             <FormControl v-model="form.date" type="date" />
@@ -511,12 +620,21 @@ onMounted(async () => {
                     ({{ s.area }} m2{{ s.SaleType ? `, ${s.SaleType.tax}` : '' }})
                   </span>
                 </div>
-                <div v-if="!stallOptions.length" class="px-3 py-2 text-sm text-gray-500">Natija yo'q</div>
+                <div v-if="!stallOptions.length" class="px-3 py-2 text-sm text-gray-500">
+                  Natija yo'q
+                </div>
               </div>
             </div>
             <div v-if="form.stallId" class="mt-1 text-sm text-gray-600 dark:text-gray-300">
               Tanlangan: {{ stallSearch }}
-              <BaseButton small outline color="info" label="Tozalash" class="ml-2" @click="clearStall" />
+              <BaseButton
+                small
+                outline
+                color="info"
+                label="Tozalash"
+                class="ml-2"
+                @click="clearStall"
+              />
             </div>
           </FormField>
           <FormField label="Summasi (hisoblangan)">
@@ -527,8 +645,19 @@ onMounted(async () => {
         </div>
         <template #footer>
           <div class="flex justify-end gap-2">
-            <BaseButton color="success" :disabled="loading" :label="editingId ? 'Saqlash' : 'Yaratish'" type="submit" />
-            <BaseButton color="info" outline label="Bekor qilish" :disabled="loading" @click="showForm = false" />
+            <BaseButton
+              color="success"
+              :disabled="loading"
+              :label="editingId ? 'Saqlash' : 'Yaratish'"
+              type="submit"
+            />
+            <BaseButton
+              color="info"
+              outline
+              label="Bekor qilish"
+              :disabled="loading"
+              @click="showForm = false"
+            />
           </div>
         </template>
       </CardBox>
