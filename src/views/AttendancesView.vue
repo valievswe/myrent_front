@@ -113,14 +113,11 @@ async function removeItem(it) {
 
 async function pay(it) {
   try {
-    // ✅ Determine payment type (use "payme" for main domain, otherwise "click")
-    const paymentType =
-      window.location.origin.includes("myrent.uz") ? "payme" : "click"
+    const hostname = window.location.hostname;
+    const paymentType = hostname === "myrent.uz" ? "payme" : "click";
 
-    // ✅ Get the payment URL from API
     const { url } = await getAttendancePayUrl(it.id, paymentType)
 
-    // ✅ Open in new tab if URL is returned
     if (url) {
       window.open(url, "_blank", "noopener")
     } else {
