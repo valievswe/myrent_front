@@ -384,7 +384,7 @@ onUnmounted(() => cleanupDebounce())
       <CardBoxModal
         v-model="showForm"
         has-cancel
-        :title="editingId ? \"Do'kon tahrirlash\" : \"Do'kon yaratish\""
+        :title="editingId ? 'Do\\'kon tahrirlash' : 'Do\\'kon yaratish'"
         button="success"
         :button-label="loading ? 'Saqlanmoqda...' : editingId ? 'Saqlash' : 'Yaratish'"
         :confirm-disabled="loading"

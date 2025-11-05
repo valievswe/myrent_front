@@ -186,7 +186,7 @@ onMounted(async () => {
         :confirm-disabled="loading"
         :button-label="loading ? 'Saqlanmoqda...' : editingId ? 'Saqlash' : 'Yaratish'"
         button="success"
-        :title="editingId ? \"Bo'limni tahrirlash\" : \"Bo'lim yaratish\""
+        :title="editingId ? 'Bo\\'limni tahrirlash' : 'Bo\\'lim yaratish'"
         @confirm="submitForm"
         @cancel="showForm = false"
       >
