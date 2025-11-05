@@ -1,7 +1,9 @@
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, useAttrs } from 'vue'
 import { useMainStore } from '@/stores/main'
 import FormControlIcon from '@/components/FormControlIcon.vue'
+
+defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
   name: {
@@ -51,6 +53,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:modelValue', 'setRef'])
+const attrs = useAttrs()
 
 const computedValue = computed({
   get: () => props.modelValue,
@@ -80,6 +83,16 @@ const computedType = computed(() => (props.options ? 'select' : props.type))
 const controlIconH = computed(() => (props.type === 'textarea' ? 'h-full' : 'h-12'))
 
 const mainStore = useMainStore()
+
+const rootClass = computed(() => {
+  const attrClass = attrs.class
+  return ['relative', attrClass].filter(Boolean)
+})
+
+const controlAttrs = computed(() => {
+  const { class: _class, ...rest } = attrs
+  return rest
+})
 
 const selectEl = ref(null)
 
@@ -124,13 +137,14 @@ if (props.ctrlKFocus) {
 </script>
 
 <template>
-  <div class="relative">
+  <div :class="rootClass">
     <select
       v-if="computedType === 'select'"
       :id="id"
       v-model="computedValue"
       :name="name"
       :class="inputElClass"
+      v-bind="controlAttrs"
     >
       <option v-for="option in options" :key="option.id ?? option" :value="option">
         {{ option.label ?? option }}
@@ -145,6 +159,7 @@ if (props.ctrlKFocus) {
       :maxlength="maxlength"
       :placeholder="placeholder"
       :required="required"
+      v-bind="controlAttrs"
     />
     <input
       v-else
@@ -159,6 +174,7 @@ if (props.ctrlKFocus) {
       :placeholder="placeholder"
       :type="computedType"
       :class="inputElClass"
+      v-bind="controlAttrs"
     />
     <FormControlIcon v-if="icon" :icon="icon" :h="controlIconH" />
   </div>
