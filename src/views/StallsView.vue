@@ -1,5 +1,6 @@
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
@@ -7,18 +8,30 @@ import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
+import CardBoxModal from '@/components/CardBoxModal.vue'
 import { listStalls, createStall, updateStall, deleteStall } from '@/services/stalls'
 import { listAttendances } from '@/services/attendances'
 import { listSaleTypes } from '@/services/saleTypes'
 import { listSections } from '@/services/sections'
+import { downloadCSV } from '@/utils/export'
 
 const items = ref([])
 const loading = ref(false)
 const errorMsg = ref('')
-const search = ref('')
-const page = ref(1)
-const limit = ref(10)
 const total = ref(0)
+
+const route = useRoute()
+const router = useRouter()
+
+const parsePositiveInt = (value, fallback) => {
+  const raw = Array.isArray(value) ? value[0] : value
+  const parsed = Number.parseInt(raw ?? '', 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+const search = ref(typeof route.query.search === 'string' ? route.query.search : '')
+const page = ref(parsePositiveInt(route.query.page, 1))
+const limit = ref(parsePositiveInt(route.query.limit, 10))
 
 const saleTypes = ref([])
 const sections = ref([])
@@ -44,13 +57,75 @@ const computedFee = computed(() => {
   return area * price
 })
 
+const totalPages = computed(() => {
+  const size = Math.max(1, limit.value || 1)
+  const count = Math.ceil((total.value || 0) / size)
+  return Number.isFinite(count) && count > 0 ? count : 1
+})
+
+const showingRange = computed(() => {
+  if (!items.value.length) return { start: 0, end: 0 }
+  const start = (page.value - 1) * (limit.value || 1) + 1
+  const end = start + items.value.length - 1
+  return { start, end }
+})
+
+let searchDebounceId = null
+let syncingRoute = false
+let initialLoad = true
+
+const cleanupDebounce = () => {
+  if (searchDebounceId) {
+    clearTimeout(searchDebounceId)
+    searchDebounceId = null
+  }
+}
+
+const syncQuery = async () => {
+  const nextQuery = { ...route.query }
+
+  if (search.value?.trim()) nextQuery.search = search.value.trim()
+  else delete nextQuery.search
+
+  if (page.value > 1) nextQuery.page = String(page.value)
+  else delete nextQuery.page
+
+  if (limit.value !== 10) nextQuery.limit = String(limit.value)
+  else delete nextQuery.limit
+
+  const changed =
+    nextQuery.search !== route.query.search ||
+    nextQuery.page !== route.query.page ||
+    nextQuery.limit !== route.query.limit
+
+  if (!changed) return
+
+  syncingRoute = true
+  try {
+    await router.replace({ query: nextQuery })
+  } finally {
+    syncingRoute = false
+  }
+}
+
 async function fetchData() {
   loading.value = true
   errorMsg.value = ''
   try {
     const res = await listStalls({ search: search.value, page: page.value, limit: limit.value })
     items.value = res.data
-    total.value = res.pagination?.total ?? items.value.length
+    total.value = Number(
+      res.pagination?.total ?? res.meta?.total ?? res.total ?? items.value.length,
+    )
+
+    const maxPage = totalPages.value
+    if (page.value > maxPage) {
+      page.value = maxPage
+    }
+
+    if (expandedStallId.value && !items.value.some((it) => it.id === expandedStallId.value)) {
+      expandedStallId.value = null
+    }
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || 'Yuklashda xatolik'
   } finally {
@@ -101,8 +176,8 @@ async function submitForm() {
     }
     if (editingId.value) await updateStall(editingId.value, payload)
     else await createStall(payload)
-    showForm.value = false
     await fetchData()
+    showForm.value = false
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || e.message || 'Saqlashda xatolik'
   } finally {
@@ -136,25 +211,114 @@ async function toggleAttendance(it) {
   }
 }
 
-onMounted(async () => {
-  await preloadRefs()
-  await fetchData()
-})
+function goToPrevPage() {
+  if (page.value <= 1) return
+  page.value -= 1
+}
 
-let debounceId
+function goToNextPage() {
+  if (page.value >= totalPages.value) return
+  page.value += 1
+}
+
+const getSectionName = (id) => sections.value.find((s) => s.id === id)?.name || (id ?? '-')
+const getSaleType = (id) => saleTypes.value.find((s) => s.id === id)
+
+function exportStallsCSV() {
+  const headers = [
+    'ID',
+    'Rasta',
+    "Bo'lim",
+    'Sotuv turi',
+    'Maydon (kv m)',
+    'Presskurant',
+    "Hisoblangan to'lov",
+    'Izoh',
+  ]
+  const rows = items.value.map((stall) => {
+    const saleType = getSaleType(stall.saleTypeId)
+    const rate = saleType ? Number(saleType.tax) || 0 : 0
+    const area = Number(stall.area) || 0
+    return [
+      stall.id,
+      stall.stallNumber ?? '',
+      getSectionName(stall.sectionId),
+      saleType ? saleType.name : stall.saleTypeId ?? '',
+      area,
+      rate,
+      area * rate,
+      stall.description ?? '',
+    ]
+  })
+  downloadCSV('stalls.csv', headers, rows)
+}
+
+const scheduleFetch = (delay = 0) => {
+  cleanupDebounce()
+  searchDebounceId = setTimeout(() => {
+    syncQuery()
+    fetchData()
+  }, delay)
+}
+
+watch(
+  () => [page.value, limit.value],
+  () => {
+    if (initialLoad) return
+    if (limit.value < 1) {
+      limit.value = 10
+      return
+    }
+    scheduleFetch()
+  },
+)
+
 watch(
   () => search.value,
   () => {
+    if (initialLoad) return
     page.value = 1
-    if (debounceId) clearTimeout(debounceId)
-    debounceId = setTimeout(() => fetchData(), 300)
+    scheduleFetch(300)
   },
 )
+
+watch(
+  () => route.query,
+  (query) => {
+    if (syncingRoute) return
+    const nextSearch =
+      typeof query.search === 'string'
+        ? query.search
+        : Array.isArray(query.search)
+          ? query.search[0]
+          : ''
+    if (nextSearch !== search.value) {
+      search.value = nextSearch
+    }
+    const nextPage = parsePositiveInt(query.page, 1)
+    if (nextPage !== page.value) {
+      page.value = nextPage
+    }
+    const nextLimit = parsePositiveInt(query.limit, 10)
+    if (nextLimit !== limit.value) {
+      limit.value = nextLimit
+    }
+  },
+)
+
+onMounted(async () => {
+  await preloadRefs()
+  await fetchData()
+  await syncQuery()
+  initialLoad = false
+})
+
+onUnmounted(() => cleanupDebounce())
 </script>
 
 <template>
   <LayoutAuthenticated>
-    <SectionMain>
+    <SectionMain wide>
       <SectionTitle first>Rastalar</SectionTitle>
 
       <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -162,12 +326,21 @@ watch(
       </div>
 
       <CardBox class="mb-4">
-        <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <FormField label="Qidirish">
-            <FormControl v-model="search" placeholder="Izoh yoki boshqa maydonlar" />
-          </FormField>
-          <div class="flex gap-2">
+        <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div class="flex flex-1 flex-col gap-4 md:flex-row md:items-center">
+            <FormField class="w-full md:max-w-sm" label="Qidirish">
+              <FormControl v-model="search" placeholder="Rasta raqami yoki izoh" />
+            </FormField>
+          </div>
+          <div class="flex flex-shrink-0 flex-wrap gap-2">
             <BaseButton color="success" :disabled="loading" label="Yaratish" @click="openCreate" />
+            <BaseButton
+              color="info"
+              outline
+              :disabled="!items.length"
+              label="Eksport CSV"
+              @click="exportStallsCSV"
+            />
           </div>
         </div>
       </CardBox>
@@ -197,19 +370,12 @@ watch(
               <template v-for="it in items" :key="it.id">
                 <tr class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
                   <td class="px-4 py-2">{{ it.stallNumber }}</td>
-                  <td class="px-4 py-2">
-                    {{ sections.find((s) => s.id === it.sectionId)?.name || it.sectionId }}
-                  </td>
-                  <td class="px-4 py-2">
-                    {{ saleTypes.find((s) => s.id === it.saleTypeId)?.name || it.saleTypeId }}
-                  </td>
+                  <td class="px-4 py-2">{{ getSectionName(it.sectionId) }}</td>
+                  <td class="px-4 py-2">{{ getSaleType(it.saleTypeId)?.name || it.saleTypeId }}</td>
                   <td class="px-4 py-2">{{ it.area }}</td>
-                  <td class="px-4 py-2">{{ saleTypes.find((s) => s.id === it.saleTypeId)?.tax }}</td>
+                  <td class="px-4 py-2">{{ getSaleType(it.saleTypeId)?.tax }}</td>
                   <td class="px-4 py-2">
-                    {{
-                      (Number(it.area) || 0) *
-                      (Number(saleTypes.find((s) => s.id === it.saleTypeId)?.tax) || 0)
-                    }}
+                    {{ (Number(it.area) || 0) * (Number(getSaleType(it.saleTypeId)?.tax) || 0) }}
                   </td>
                   <td class="px-4 py-2">{{ it.description }}</td>
                   <td class="px-4 py-2 text-right">
@@ -235,7 +401,9 @@ watch(
                 <tr v-if="expandedStallId === it.id">
                   <td colspan="8" class="bg-gray-50 px-4 py-3 dark:bg-gray-800">
                     <div class="mb-2 text-sm font-semibold">So'nggi attendance</div>
-                    <div v-if="!attendanceMap[it.id]?.length" class="text-sm text-gray-500">Ma'lumot yo'q</div>
+                    <div v-if="!attendanceMap[it.id]?.length" class="text-sm text-gray-500">
+                      Ma'lumot yo'q
+                    </div>
                     <div v-else>
                       <table class="w-full table-auto text-sm">
                         <thead>
@@ -247,7 +415,7 @@ watch(
                         </thead>
                         <tbody>
                           <tr v-for="a in attendanceMap[it.id]" :key="a.id">
-                            <td class="px-2 py-1">{{ a.date?.substring(0,10) }}</td>
+                            <td class="px-2 py-1">{{ a.date?.substring(0, 10) }}</td>
                             <td class="px-2 py-1">{{ a.amount }}</td>
                             <td class="px-2 py-1">{{ a.status }}</td>
                           </tr>
@@ -260,29 +428,49 @@ watch(
             </tbody>
           </table>
         </div>
-        <div class="flex items-center justify-between px-4 py-3">
-          <div>Jami: {{ total }}</div>
-          <div class="flex items-center gap-2">
-            <BaseButton
-              :disabled="page <= 1 || loading"
-              label="Oldingi"
-              @click="(page--, fetchData())"
-            />
-            <span>Sahifa {{ page }}</span>
-            <BaseButton
-              :disabled="items.length < limit || loading"
-              label="Keyingi"
-              @click="(page++, fetchData())"
-            />
+        <div class="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div class="text-sm text-slate-500">
+            <template v-if="showingRange.start">
+              Ko'rsatilmoqda {{ showingRange.start }}–{{ showingRange.end }} / {{ total }}
+            </template>
+            <template v-else>Jami: {{ total }}</template>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <span>Sahifa hajmi</span>
+              <select
+                v-model.number="limit"
+                class="rounded border border-gray-300 bg-white px-3 py-1 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              >
+                <option :value="10">10</option>
+                <option :value="20">20</option>
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+              </select>
+            </label>
+            <div class="flex items-center gap-2">
+              <BaseButton :disabled="page <= 1 || loading" label="Oldingi" @click="goToPrevPage" />
+              <span class="text-sm text-slate-600 dark:text-slate-300">
+                Sahifa {{ page }} / {{ totalPages }}
+              </span>
+              <BaseButton :disabled="page >= totalPages || loading" label="Keyingi" @click="goToNextPage" />
+            </div>
           </div>
         </div>
       </CardBox>
 
-      <CardBox v-if="showForm" class="mt-4" is-form @submit.prevent="submitForm">
-        <SectionTitle>
-          {{ editingId ? 'Rastani tahrirlash' : 'Rasta yaratish' }}
-        </SectionTitle>
-        <div class="grid gap-4 md:grid-cols-2">
+      <CardBoxModal
+        v-model="showForm"
+        has-cancel
+        :title="editingId ? 'Rastani tahrirlash' : 'Rasta yaratish'"
+        button="success"
+        :button-label="loading ? 'Saqlanmoqda...' : editingId ? 'Saqlash' : 'Yaratish'"
+        :confirm-disabled="loading"
+        :close-on-confirm="false"
+        @confirm="submitForm"
+        @cancel="showForm = false"
+      >
+        <form class="grid gap-4 md:grid-cols-2" @submit.prevent="submitForm">
           <FormField label="Bo'lim">
             <select
               v-model="form.sectionId"
@@ -307,7 +495,7 @@ watch(
 
           <FormField label="Maydon (kv m)">
             <FormControl
-              v-model="form.area"
+              v-model.number="form.area"
               type="number"
               min="0"
               step="0.01"
@@ -315,38 +503,21 @@ watch(
             />
           </FormField>
 
-          <!-- 🔹 New Stall Number Field -->
           <FormField label="Rasta raqami">
             <FormControl v-model="form.stallNumber" placeholder="Masalan: A-12 yoki 103" />
           </FormField>
 
-          <FormField label="Izoh">
+          <FormField class="md:col-span-2" label="Izoh">
             <FormControl v-model="form.description" placeholder="Qisqacha izoh" />
           </FormField>
 
-          <div class="rounded border border-gray-200 p-3 md:col-span-2 dark:border-gray-700">
-            Hisoblangan to'lov: <b>{{ computedFee }}</b>
+          <div class="rounded border border-gray-200 p-3 text-sm md:col-span-2 dark:border-gray-700">
+            Hisoblangan to'lov: <b>{{ computedFee || 0 }}</b>
           </div>
-        </div>
 
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <BaseButton
-              color="success"
-              :disabled="loading"
-              :label="editingId ? 'Saqlash' : 'Yaratish'"
-              type="submit"
-            />
-            <BaseButton
-              color="info"
-              outline
-              label="Bekor qilish"
-              :disabled="loading"
-              @click="showForm = false"
-            />
-          </div>
-        </template>
-      </CardBox>
+          <button type="submit" class="hidden" />
+        </form>
+      </CardBoxModal>
     </SectionMain>
   </LayoutAuthenticated>
 </template>

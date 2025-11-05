@@ -1,6 +1,6 @@
 <!-- eslint-disable no-empty -->
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
@@ -8,6 +8,7 @@ import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
+import CardBoxModal from '@/components/CardBoxModal.vue'
 import { listUsers } from '@/services/users'
 import { listSections, createSection, updateSection, deleteSection } from '@/services/sections'
 
@@ -19,6 +20,7 @@ const showForm = ref(false)
 const editingId = ref(null)
 const form = ref({ name: '', description: '', assigneeId: null })
 const users = ref([])
+const searchTerm = ref('')
 
 async function fetchData() {
   loading.value = true
@@ -60,8 +62,8 @@ async function submitForm() {
       throw new Error("Bo'lim uchun mas'ul xodim (assigneeId) talab qilinadi")
     if (editingId.value) await updateSection(editingId.value, payload)
     else await createSection(payload)
-    showForm.value = false
     await fetchData()
+    showForm.value = false
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || e.message || 'Saqlashda xatolik'
   } finally {
@@ -83,6 +85,22 @@ async function removeItem(id) {
   }
 }
 
+const filteredItems = computed(() => {
+  const term = searchTerm.value.trim().toLowerCase()
+  if (!term) return items.value
+
+  return items.value.filter((section) => {
+    const name = section.name?.toLowerCase?.() || ''
+    const description = section.description?.toLowerCase?.() || ''
+    const checkerName = section.assignedChecker
+      ? `${section.assignedChecker.firstName || ''} ${section.assignedChecker.lastName || ''}`
+          .trim()
+          .toLowerCase()
+      : ''
+    return [name, description, checkerName].some((field) => field.includes(term))
+  })
+})
+
 onMounted(async () => {
   await fetchData()
   try {
@@ -93,7 +111,7 @@ onMounted(async () => {
 
 <template>
   <LayoutAuthenticated>
-    <SectionMain>
+    <SectionMain wide>
       <SectionTitle first>Bo'limlar</SectionTitle>
 
       <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -101,7 +119,10 @@ onMounted(async () => {
       </div>
 
       <CardBox class="mb-4">
-        <div class="flex items-center justify-end">
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <FormField label="Qidirish">
+            <FormControl v-model="searchTerm" placeholder="Bo'lim yoki mas'ul xodim" />
+          </FormField>
           <BaseButton color="success" :disabled="loading" label="Yaratish" @click="openCreate" />
         </div>
       </CardBox>
@@ -121,11 +142,13 @@ onMounted(async () => {
               <tr v-if="loading">
                 <td colspan="4" class="px-4 py-6 text-center">Yuklanmoqda...</td>
               </tr>
-              <tr v-else-if="!items.length">
-                <td colspan="4" class="px-4 py-6 text-center">Ma'lumot topilmadi</td>
+              <tr v-else-if="!filteredItems.length">
+                <td colspan="4" class="px-4 py-6 text-center">
+                  {{ items.length ? "Mos bo'lim topilmadi" : "Ma'lumot topilmadi" }}
+                </td>
               </tr>
               <tr
-                v-for="it in items"
+                v-for="it in filteredItems"
                 :key="it.id"
                 class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
               >
@@ -156,12 +179,19 @@ onMounted(async () => {
         </div>
       </CardBox>
 
-      <CardBox v-if="showForm" class="mt-4" is-form @submit.prevent="submitForm">
-        <SectionTitle>
-          {{ editingId ? "Bo'limni tahrirlash" : "Bo'lim yaratish" }}
-        </SectionTitle>
-        <div class="grid gap-4 md:grid-cols-2">
-          <FormField label="Nomi">
+      <CardBoxModal
+        v-model="showForm"
+        has-cancel
+        :close-on-confirm="false"
+        :confirm-disabled="loading"
+        :button-label="loading ? 'Saqlanmoqda...' : editingId ? 'Saqlash' : 'Yaratish'"
+        button="success"
+        :title="editingId ? \"Bo'limni tahrirlash\" : \"Bo'lim yaratish\""
+        @confirm="submitForm"
+        @cancel="showForm = false"
+      >
+        <form class="grid gap-4 md:grid-cols-2" @submit.prevent="submitForm">
+          <FormField label="Nomi" class="md:col-span-2">
             <FormControl v-model="form.name" required placeholder="Masalan: Elektronika" />
           </FormField>
           <FormField label="Mas'ul xodim">
@@ -175,28 +205,12 @@ onMounted(async () => {
               </option>
             </select>
           </FormField>
-          <FormField label="Izoh">
+          <FormField label="Izoh" class="md:col-span-2">
             <FormControl v-model="form.description" placeholder="Qisqacha izoh" />
           </FormField>
-        </div>
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <BaseButton
-              color="success"
-              :disabled="loading"
-              :label="editingId ? 'Saqlash' : 'Yaratish'"
-              type="submit"
-            />
-            <BaseButton
-              color="info"
-              outline
-              label="Bekor qilish"
-              :disabled="loading"
-              @click="showForm = false"
-            />
-          </div>
-        </template>
-      </CardBox>
+          <button type="submit" class="hidden" />
+        </form>
+      </CardBoxModal>
     </SectionMain>
   </LayoutAuthenticated>
 </template>

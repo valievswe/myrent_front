@@ -1,5 +1,6 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
@@ -7,30 +8,107 @@ import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
+import CardBoxModal from '@/components/CardBoxModal.vue'
 import { listStores, createStore, updateStore, deleteStore } from '@/services/stores'
 import { listSections } from '@/services/sections'
+import { downloadCSV } from '@/utils/export'
 
 const items = ref([])
 const loading = ref(false)
 const errorMsg = ref('')
-const search = ref('')
-const page = ref(1)
-const limit = ref(10)
 const total = ref(0)
+
+const route = useRoute()
+const router = useRouter()
+
+const parsePositiveInt = (value, fallback) => {
+  const raw = Array.isArray(value) ? value[0] : value
+  const parsed = Number.parseInt(raw ?? '', 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+const search = ref(typeof route.query.search === 'string' ? route.query.search : '')
+const page = ref(parsePositiveInt(route.query.page, 1))
+const limit = ref(parsePositiveInt(route.query.limit, 10))
 
 const showForm = ref(false)
 const editingId = ref(null)
 const form = ref({ storeNumber: '', area: null, description: '', sectionId: null })
 const sections = ref([])
 
+const totalPages = computed(() => {
+  const size = Math.max(1, limit.value || 1)
+  const count = Math.ceil((total.value || 0) / size)
+  return Number.isFinite(count) && count > 0 ? count : 1
+})
+
+const showingRange = computed(() => {
+  if (!items.value.length) {
+    return { start: 0, end: 0 }
+  }
+  const start = (page.value - 1) * (limit.value || 1) + 1
+  const end = start + items.value.length - 1
+  return { start, end }
+})
+
+let searchDebounceId = null
+let syncingRoute = false
+let initialLoad = true
+
+const cleanupDebounce = () => {
+  if (searchDebounceId) {
+    clearTimeout(searchDebounceId)
+    searchDebounceId = null
+  }
+}
+
+const syncQuery = async () => {
+  const nextQuery = { ...route.query }
+
+  if (search.value?.trim()) nextQuery.search = search.value.trim()
+  else delete nextQuery.search
+
+  if (page.value > 1) nextQuery.page = String(page.value)
+  else delete nextQuery.page
+
+  if (limit.value !== 10) nextQuery.limit = String(limit.value)
+  else delete nextQuery.limit
+
+  const changed =
+    nextQuery.search !== route.query.search ||
+    nextQuery.page !== route.query.page ||
+    nextQuery.limit !== route.query.limit
+
+  if (!changed) return
+
+  syncingRoute = true
+  try {
+    await router.replace({ query: nextQuery })
+  } finally {
+    syncingRoute = false
+  }
+}
+
 async function fetchData() {
   loading.value = true
   errorMsg.value = ''
   try {
     // Backend defaults to only free; request all for full listing
-    const res = await listStores({ search: search.value, page: page.value, limit: limit.value, withContracts: true, onlyFree: false })
+    const res = await listStores({
+      search: search.value,
+      page: page.value,
+      limit: limit.value,
+      withContracts: true,
+      onlyFree: false,
+    })
     items.value = res.data
-    total.value = res.total ?? items.value.length
+    total.value = Number(
+      res.total ?? res.pagination?.total ?? res.meta?.total ?? items.value.length,
+    )
+    const maxPage = totalPages.value
+    if (page.value > maxPage) {
+      page.value = maxPage
+    }
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || 'Yuklashda xatolik'
   } finally {
@@ -70,8 +148,8 @@ async function submitForm() {
     } else {
       await createStore(payload)
     }
-    showForm.value = false
     await fetchData()
+    showForm.value = false
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || 'Saqlashda xatolik'
   } finally {
@@ -93,28 +171,100 @@ async function removeItem(id) {
   }
 }
 
+function goToPrevPage() {
+  if (page.value <= 1) return
+  page.value -= 1
+}
+
+function goToNextPage() {
+  if (page.value >= totalPages.value) return
+  page.value += 1
+}
+
+function exportStoresCSV() {
+  const headers = ["ID", "Do'kon", "Bo'lim", "Maydon (kv m)", 'Holati', 'Izoh']
+  const rows = items.value.map((store) => [
+    store.id,
+    store.storeNumber ?? '',
+    getSectionName(store.sectionId),
+    store.area ?? '',
+    store.isOccupied ? 'Band' : "Bo'sh",
+    store.description ?? '',
+  ])
+  downloadCSV('stores.csv', headers, rows)
+}
+
+const getSectionName = (id) =>
+  sections.value.find((s) => s.id === id)?.name || (id ?? '-')
+
+const scheduleFetch = (delay = 0) => {
+  cleanupDebounce()
+  searchDebounceId = setTimeout(() => {
+    syncQuery()
+    fetchData()
+  }, delay)
+}
+
+watch(
+  () => [page.value, limit.value],
+  () => {
+    if (initialLoad) return
+    if (limit.value < 1) {
+      limit.value = 10
+      return
+    }
+    scheduleFetch()
+  },
+)
+
+watch(
+  () => search.value,
+  () => {
+    if (initialLoad) return
+    page.value = 1
+    scheduleFetch(300)
+  },
+)
+
+watch(
+  () => route.query,
+  (query) => {
+    if (syncingRoute) return
+    const nextSearch =
+      typeof query.search === 'string'
+        ? query.search
+        : Array.isArray(query.search)
+          ? query.search[0]
+          : ''
+    if (nextSearch !== search.value) {
+      search.value = nextSearch
+    }
+    const nextPage = parsePositiveInt(query.page, 1)
+    if (nextPage !== page.value) {
+      page.value = nextPage
+    }
+    const nextLimit = parsePositiveInt(query.limit, 10)
+    if (nextLimit !== limit.value) {
+      limit.value = nextLimit
+    }
+  },
+)
+
 onMounted(async () => {
   try {
     sections.value = await listSections()
   } catch {}
   await fetchData()
+  await syncQuery()
+  initialLoad = false
 })
-let debounceId = null
-watch(
-  () => search.value,
-  () => {
-    page.value = 1
-    if (debounceId) clearTimeout(debounceId)
-    debounceId = setTimeout(() => {
-      fetchData()
-    }, 300)
-  },
-)
+
+onUnmounted(() => cleanupDebounce())
 </script>
 
 <template>
   <LayoutAuthenticated>
-    <SectionMain>
+    <SectionMain wide>
       <SectionTitle first>Do'konlar</SectionTitle>
 
       <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -122,12 +272,21 @@ watch(
       </div>
 
       <CardBox class="mb-4">
-        <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <FormField label="Qidirish">
-            <FormControl v-model="search" placeholder="Do'kon raqami yoki izoh" />
-          </FormField>
-          <div class="flex gap-2">
+        <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div class="flex flex-1 flex-col gap-4 md:flex-row md:items-center">
+            <FormField class="w-full md:max-w-sm" label="Qidirish">
+              <FormControl v-model="search" placeholder="Do'kon raqami yoki izoh" />
+            </FormField>
+          </div>
+          <div class="flex flex-shrink-0 flex-wrap gap-2">
             <BaseButton color="success" :disabled="loading" label="Yaratish" @click="openCreate" />
+            <BaseButton
+              color="info"
+              outline
+              :disabled="!items.length"
+              label="Eksport CSV"
+              @click="exportStoresCSV"
+            />
           </div>
         </div>
       </CardBox>
@@ -147,10 +306,10 @@ watch(
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td colspan="5" class="px-4 py-6 text-center">Yuklanmoqda...</td>
+                <td colspan="6" class="px-4 py-6 text-center">Yuklanmoqda...</td>
               </tr>
               <tr v-else-if="!items.length">
-                <td colspan="5" class="px-4 py-6 text-center">Ma'lumot topilmadi</td>
+                <td colspan="6" class="px-4 py-6 text-center">Ma'lumot topilmadi</td>
               </tr>
               <tr
                 v-for="it in items"
@@ -167,7 +326,7 @@ watch(
                     {{ it.isOccupied ? 'Band' : "Bo'sh" }}
                   </span>
                 </td>
-                <td class="px-4 py-2">{{ sections.find((s) => s.id === it.sectionId)?.name || it.sectionId }}</td>
+                <td class="px-4 py-2">{{ getSectionName(it.sectionId) }}</td>
                 <td class="px-4 py-2 text-right">
                   <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
                   <BaseButton
@@ -183,45 +342,73 @@ watch(
             </tbody>
           </table>
         </div>
-        <div class="flex items-center justify-between px-4 py-3">
-          <div>Jami: {{ total }}</div>
-          <div class="flex items-center gap-2">
-            <BaseButton
-              :disabled="page <= 1 || loading"
-              label="Oldingi"
-              @click="(page--, fetchData())"
-            />
-            <span>Sahifa {{ page }}</span>
-            <BaseButton
-              :disabled="items.length < limit || loading"
-              label="Keyingi"
-              @click="(page++, fetchData())"
-            />
+        <div class="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div class="text-sm text-slate-500">
+            <template v-if="showingRange.start">
+              Ko'rsatilmoqda {{ showingRange.start }}–{{ showingRange.end }} / {{ total }}
+            </template>
+            <template v-else>Jami: {{ total }}</template>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <span>Sahifa hajmi</span>
+              <select
+                v-model.number="limit"
+                class="rounded border border-gray-300 bg-white px-3 py-1 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              >
+                <option :value="10">10</option>
+                <option :value="20">20</option>
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+              </select>
+            </label>
+            <div class="flex items-center gap-2">
+              <BaseButton
+                :disabled="page <= 1 || loading"
+                label="Oldingi"
+                @click="goToPrevPage"
+              />
+              <span class="text-sm text-slate-600 dark:text-slate-300">
+                Sahifa {{ page }} / {{ totalPages }}
+              </span>
+              <BaseButton
+                :disabled="page >= totalPages || loading"
+                label="Keyingi"
+                @click="goToNextPage"
+              />
+            </div>
           </div>
         </div>
       </CardBox>
 
-      <CardBox v-if="showForm" class="mt-4" is-form @submit.prevent="submitForm">
-        <SectionTitle>
-          {{ editingId ? "Do'kon tahrirlash" : "Do'kon yaratish" }}
-        </SectionTitle>
-        <div class="grid gap-4 md:grid-cols-2">
+      <CardBoxModal
+        v-model="showForm"
+        has-cancel
+        :title="editingId ? \"Do'kon tahrirlash\" : \"Do'kon yaratish\""
+        button="success"
+        :button-label="loading ? 'Saqlanmoqda...' : editingId ? 'Saqlash' : 'Yaratish'"
+        :confirm-disabled="loading"
+        :close-on-confirm="false"
+        @confirm="submitForm"
+        @cancel="showForm = false"
+      >
+        <form class="grid gap-4 md:grid-cols-2" @submit.prevent="submitForm">
           <FormField label="Do'kon raqami">
             <FormControl v-model="form.storeNumber" required placeholder="Masalan: S001" />
           </FormField>
           <FormField label="Maydon (kv m)">
             <FormControl
-              v-model="form.area"
+              v-model.number="form.area"
               type="number"
               min="0"
               step="0.01"
               placeholder="Masalan: 50.5"
             />
           </FormField>
-          <FormField label="Izoh">
+          <FormField class="md:col-span-2" label="Izoh">
             <FormControl v-model="form.description" placeholder="Qisqacha izoh" />
           </FormField>
-          <FormField label="Bo'lim (ixtiyoriy)">
+          <FormField class="md:col-span-2" label="Bo'lim (ixtiyoriy)">
             <select
               v-model="form.sectionId"
               class="block w-full rounded border border-gray-300 bg-white p-2 text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
@@ -230,25 +417,9 @@ watch(
               <option v-for="s in sections" :key="s.id" :value="s.id">{{ s.name }}</option>
             </select>
           </FormField>
-        </div>
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <BaseButton
-              color="success"
-              :disabled="loading"
-              :label="editingId ? 'Saqlash' : 'Yaratish'"
-              type="submit"
-            />
-            <BaseButton
-              color="info"
-              outline
-              label="Bekor qilish"
-              :disabled="loading"
-              @click="showForm = false"
-            />
-          </div>
-        </template>
-      </CardBox>
+          <button type="submit" class="hidden" />
+        </form>
+      </CardBoxModal>
     </SectionMain>
   </LayoutAuthenticated>
 </template>

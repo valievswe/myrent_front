@@ -369,7 +369,7 @@ onUnmounted(() => {
       <div class="mx-auto flex w-full max-w-4xl flex-col gap-6">
         <div class="text-center">
           <h1 class="text-3xl font-semibold text-slate-800 dark:text-slate-100">Ijara To'lovi</h1>
-          <p class="mt-2 text-2xl text-slate-900 dark:text-slate-200">Do'kon yoki rasta bo'yicha to'lov summasini tekshiring va Click orqali to'lovni amalga oshiring.</p>
+          <p class="mt-2 text-2xl text-slate-900 dark:text-slate-200">Do'kon yoki rasta bo'yicha to'lov summasini tekshiring va to'lovni amalga oshiring.</p>
         </div>
 
         <CardBox>
@@ -537,7 +537,7 @@ onUnmounted(() => {
 
         <div class="mx-auto max-w-3xl text-slate-900 dark:text-slate-200">
           <p>
-            Savollar tug'ilsa, iltimos bozordagi axborot markaziga murojaat qiling. To'lov Click orqali amalga oshiriladi va tranzaksiya to'g'risida SMS orqali ma'lumot yuboriladi.
+            Savollar tug'ilsa, iltimos bozor ma'muriyatiga murojaat qiling
           </p>
         </div>
       </div>

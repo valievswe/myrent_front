@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { mdiClose } from '@mdi/js'
 import BaseButton from '@/components/BaseButton.vue'
 import BaseButtons from '@/components/BaseButtons.vue'
@@ -27,6 +27,14 @@ const props = defineProps({
     type: [String, Number, Boolean],
     default: null,
   },
+  confirmDisabled: {
+    type: Boolean,
+    default: false,
+  },
+  closeOnConfirm: {
+    type: Boolean,
+    default: true,
+  },
 })
 
 const emit = defineEmits(['update:modelValue', 'cancel', 'confirm'])
@@ -41,15 +49,24 @@ const confirmCancel = (mode) => {
   emit(mode)
 }
 
-const confirm = () => confirmCancel('confirm')
-
+const confirm = () => {
+  if (props.confirmDisabled) return
+  if (props.closeOnConfirm) {
+    confirmCancel('confirm')
+  } else {
+    emit('confirm')
+  }
+}
 const cancel = () => confirmCancel('cancel')
 
-window.addEventListener('keydown', (e) => {
+const handleEscape = (e) => {
   if (e.key === 'Escape' && value.value) {
     cancel()
   }
-})
+}
+
+onMounted(() => window.addEventListener('keydown', handleEscape))
+onBeforeUnmount(() => window.removeEventListener('keydown', handleEscape))
 </script>
 
 <template>
@@ -80,7 +97,12 @@ window.addEventListener('keydown', (e) => {
 
       <CardBoxComponentFooter>
         <BaseButtons>
-          <BaseButton :label="buttonLabel" :color="button" @click="confirm" />
+          <BaseButton
+            :label="buttonLabel"
+            :color="button"
+            :disabled="confirmDisabled"
+            @click="confirm"
+          />
           <BaseButton v-if="hasCancel" label="Cancel" :color="button" outline @click="cancel" />
         </BaseButtons>
       </CardBoxComponentFooter>
