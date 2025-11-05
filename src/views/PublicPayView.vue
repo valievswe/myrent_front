@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import LayoutGuest from '@/layouts/LayoutGuest.vue'
 import CardBox from '@/components/CardBox.vue'
@@ -164,11 +164,12 @@ function openUrl(url) {
   }
 }
 
-async function submitStoreSearch(updateUrl = true) {
+async function submitStoreSearch(updateUrl = true, options = {}) {
+  const { suppressEmptyError = false } = options
   const storeNumber = storeForm.storeNumber?.trim()
   const tin = storeForm.tin?.trim()
   if (!storeNumber && !tin) {
-    storeError.value = "Do'kon raqami yoki STIR kiriting"
+    storeError.value = suppressEmptyError ? '' : "Do'kon raqami yoki STIR kiriting"
     storeResults.value = []
     selectedContractId.value = null
     return
@@ -330,6 +331,36 @@ watch(
   () => route.query,
   () => applyQuery(false),
 )
+
+let storeAutoSearchTimer = null
+watch(
+  () => [storeForm.storeNumber, storeForm.tin, mode.value],
+  ([storeNumber, tin, currentMode]) => {
+    if (currentMode !== 'store') return
+    if (storeAutoSearchTimer) {
+      clearTimeout(storeAutoSearchTimer)
+      storeAutoSearchTimer = null
+    }
+    const hasInput = !!storeNumber?.trim() || !!tin?.trim()
+    if (!hasInput) {
+      storeError.value = ''
+      storeResults.value = []
+      selectedContractId.value = null
+      return
+    }
+    storeAutoSearchTimer = setTimeout(() => {
+      submitStoreSearch(false, { suppressEmptyError: true })
+    }, 350)
+  },
+  { immediate: false }
+)
+
+onUnmounted(() => {
+  if (storeAutoSearchTimer) {
+    clearTimeout(storeAutoSearchTimer)
+    storeAutoSearchTimer = null
+  }
+})
 </script>
 
 <template>
