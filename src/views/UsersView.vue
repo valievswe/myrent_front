@@ -7,6 +7,7 @@ import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
+import CardBoxModal from '@/components/CardBoxModal.vue'
 import { listUsers, createUser, updateUser, deleteUser } from '@/services/users'
 
 const items = ref([])
@@ -97,8 +98,8 @@ watch([search, role], () => {
 
       <CardBox class="mb-4">
         <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div class="flex gap-3">
-            <FormField label="Qidirish">
+          <div class="flex flex-col gap-3 md:flex-row md:items-end">
+            <FormField class="w-full md:max-w-xl" label="Qidirish">
               <FormControl v-model="search" placeholder="Email yoki ism/familiya" />
             </FormField>
             <FormField label="Roli">
@@ -148,18 +149,25 @@ watch([search, role], () => {
         </div>
       </CardBox>
 
-      <CardBox v-if="showForm" class="mt-4" is-form @submit.prevent="submitForm">
-        <SectionTitle>
-          {{ editingId ? 'Foydalanuvchini tahrirlash' : 'Foydalanuvchi yaratish' }}
-        </SectionTitle>
-        <div class="grid gap-4 md:grid-cols-2">
+      <CardBoxModal
+        v-model="showForm"
+        has-cancel
+        :close-on-confirm="false"
+        :confirm-disabled="loading"
+        button="success"
+        :button-label="loading ? 'Saqlanmoqda...' : editingId ? 'Saqlash' : 'Yaratish'"
+        :title="editingId ? 'Foydalanuvchini tahrirlash' : 'Foydalanuvchi yaratish'"
+        @confirm="submitForm"
+        @cancel="showForm = false"
+      >
+        <form class="grid gap-4 md:grid-cols-2" @submit.prevent="submitForm">
           <FormField label="Email">
             <FormControl v-model="form.email" type="email" required placeholder="user@example.com" />
           </FormField>
-          <FormField label="Parol" v-if="!editingId">
+          <FormField v-if="!editingId" label="Parol">
             <FormControl v-model="form.password" type="password" required placeholder="Kuchli parol" />
           </FormField>
-          <FormField label="Parol (o'zgartirish)", v-else>
+          <FormField v-else label="Parol (o'zgartirish)">
             <FormControl v-model="form.password" type="password" placeholder="Ixtiyoriy" />
           </FormField>
           <FormField label="Ism">
@@ -173,14 +181,9 @@ watch([search, role], () => {
               <option v-for="r in roles" :key="r" :value="r">{{ r }}</option>
             </select>
           </FormField>
-        </div>
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <BaseButton color="success" :disabled="loading" :label="editingId ? 'Saqlash' : 'Yaratish'" type="submit" />
-            <BaseButton color="info" outline label="Bekor qilish" :disabled="loading" @click="showForm = false" />
-          </div>
-        </template>
-      </CardBox>
+          <button type="submit" class="hidden" />
+        </form>
+      </CardBoxModal>
     </SectionMain>
   </LayoutAuthenticated>
 </template>

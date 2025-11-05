@@ -7,6 +7,7 @@ import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
+import CardBoxModal from '@/components/CardBoxModal.vue'
 import { listContracts, createContract, updateContract, deleteContract } from '@/services/contracts'
 import { listOwners } from '@/services/owners'
 import { listStores } from '@/services/stores'
@@ -432,7 +433,7 @@ async function exportContractTransactionsCSV() {
 
       <CardBox class="mb-4">
         <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div class="flex flex-wrap gap-3 items-end">
+          <div class="flex flex-wrap items-end gap-3">
             <FormField label="Holati">
               <select v-model="statusFilter" class="rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100">
                 <option value="active">Faol</option>
@@ -440,7 +441,7 @@ async function exportContractTransactionsCSV() {
                 <option value="all">Barchasi</option>
               </select>
             </FormField>
-            <FormField label="Qidirish (kamida 2 belgi)">
+            <FormField class="w-full md:max-w-2xl" label="Qidirish (kamida 2 belgi)">
               <div class="space-y-1">
                 <FormControl
                   v-model="searchTerm"
@@ -593,11 +594,18 @@ async function exportContractTransactionsCSV() {
         </div>
       </CardBox>
 
-      <CardBox v-if="showForm" class="mt-4" is-form @submit.prevent="submitForm">
-        <SectionTitle>{{
-          editingId ? 'Shartnomani tahrirlash' : 'Shartnoma yaratish'
-        }}</SectionTitle>
-        <div class="grid gap-4 md:grid-cols-2">
+      <CardBoxModal
+        v-model="showForm"
+        has-cancel
+        :close-on-confirm="false"
+        :confirm-disabled="loading"
+        button="success"
+        :button-label="loading ? 'Saqlanmoqda...' : editingId ? 'Saqlash' : 'Yaratish'"
+        :title="editingId ? 'Shartnomani tahrirlash' : 'Shartnoma yaratish'"
+        @confirm="submitForm"
+        @cancel="showForm = false"
+      >
+        <form class="grid gap-4 md:grid-cols-2" @submit.prevent="submitForm">
           <FormField label="Ega">
             <div class="relative">
               <FormControl
@@ -676,25 +684,9 @@ async function exportContractTransactionsCSV() {
           <FormField label="Faol">
             <input type="checkbox" v-model="form.isActive" class="h-5 w-5" />
           </FormField>
-        </div>
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <BaseButton
-              color="success"
-              :disabled="loading"
-              :label="editingId ? 'Saqlash' : 'Yaratish'"
-              type="submit"
-            />
-            <BaseButton
-              color="info"
-              outline
-              label="Bekor qilish"
-              :disabled="loading"
-              @click="showForm = false"
-            />
-          </div>
-        </template>
-      </CardBox>
+          <button type="submit" class="hidden" />
+        </form>
+      </CardBoxModal>
     </SectionMain>
   </LayoutAuthenticated>
 </template>

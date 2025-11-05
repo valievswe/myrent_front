@@ -7,6 +7,7 @@ import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
+import CardBoxModal from '@/components/CardBoxModal.vue'
 import { listOwners, createOwner, updateOwner, deleteOwner } from '@/services/owners'
 
 const items = ref([])
@@ -106,11 +107,10 @@ watch(() => search.value, () => {
 
       <CardBox class="mb-4">
         <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <FormField label="Qidirish">
+          <FormField class="w-full md:max-w-xl" label="Qidirish">
             <FormControl v-model="search" placeholder="Ism, STIR yoki telefon" />
           </FormField>
           <div class="flex gap-2">
-            
             <BaseButton color="success" :disabled="loading" label="Yaratish" @click="openCreate" />
           </div>
         </div>
@@ -187,11 +187,18 @@ watch(() => search.value, () => {
         </div>
       </CardBox>
 
-      <CardBox v-if="showForm" class="mt-4" is-form @submit.prevent="submitForm">
-        <SectionTitle>
-          {{ editingId ? 'Tadbirkor tahrirlash' : 'Tadbirkor yaratish' }}
-        </SectionTitle>
-        <div class="grid gap-4 md:grid-cols-2">
+      <CardBoxModal
+        v-model="showForm"
+        has-cancel
+        :close-on-confirm="false"
+        :confirm-disabled="loading"
+        button="success"
+        :button-label="loading ? 'Saqlanmoqda...' : editingId ? 'Saqlash' : 'Yaratish'"
+        :title="editingId ? 'Tadbirkor tahrirlash' : 'Tadbirkor yaratish'"
+        @confirm="submitForm"
+        @cancel="showForm = false"
+      >
+        <form class="grid gap-4 md:grid-cols-2" @submit.prevent="submitForm">
           <FormField label="F.I.Sh">
             <FormControl v-model="form.fullName" required placeholder="Masalan: Ali Valiyev" />
           </FormField>
@@ -204,25 +211,9 @@ watch(() => search.value, () => {
           <FormField label="Manzil">
             <FormControl v-model="form.address" placeholder="Manzil" />
           </FormField>
-        </div>
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <BaseButton
-              color="success"
-              :disabled="loading"
-              :label="editingId ? 'Saqlash' : 'Yaratish'"
-              type="submit"
-            />
-            <BaseButton
-              color="info"
-              outline
-              label="Bekor qilish"
-              :disabled="loading"
-              @click="showForm = false"
-            />
-          </div>
-        </template>
-      </CardBox>
+          <button type="submit" class="hidden" />
+        </form>
+      </CardBoxModal>
     </SectionMain>
   </LayoutAuthenticated>
 </template>

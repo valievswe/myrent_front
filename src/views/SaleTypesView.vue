@@ -7,6 +7,7 @@ import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
+import CardBoxModal from '@/components/CardBoxModal.vue'
 import { listSaleTypes, createSaleType, updateSaleType, deleteSaleType } from '@/services/saleTypes'
 
 const items = ref([])
@@ -132,11 +133,18 @@ onMounted(fetchData)
         </div>
       </CardBox>
 
-      <CardBox v-if="showForm" class="mt-4" is-form @submit.prevent="submitForm">
-        <SectionTitle>
-          {{ editingId ? 'Sotuv turini tahrirlash' : 'Sotuv turi yaratish' }}
-        </SectionTitle>
-        <div class="grid gap-4 md:grid-cols-2">
+      <CardBoxModal
+        v-model="showForm"
+        has-cancel
+        :close-on-confirm="false"
+        :confirm-disabled="loading"
+        button="success"
+        :button-label="loading ? 'Saqlanmoqda...' : editingId ? 'Saqlash' : 'Yaratish'"
+        :title="editingId ? 'Sotuv turini tahrirlash' : 'Sotuv turi yaratish'"
+        @confirm="submitForm"
+        @cancel="showForm = false"
+      >
+        <form class="grid gap-4 md:grid-cols-2" @submit.prevent="submitForm">
           <FormField label="Nomi">
             <FormControl v-model="form.name" required placeholder="Masalan: Oziq-ovqat" />
           </FormField>
@@ -152,25 +160,9 @@ onMounted(fetchData)
           <FormField label="Izoh">
             <FormControl v-model="form.description" placeholder="Qisqacha izoh" />
           </FormField>
-        </div>
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <BaseButton
-              color="success"
-              :disabled="loading"
-              :label="editingId ? 'Saqlash' : 'Yaratish'"
-              type="submit"
-            />
-            <BaseButton
-              color="info"
-              outline
-              label="Bekor qilish"
-              :disabled="loading"
-              @click="showForm = false"
-            />
-          </div>
-        </template>
-      </CardBox>
+          <button type="submit" class="hidden" />
+        </form>
+      </CardBoxModal>
     </SectionMain>
   </LayoutAuthenticated>
 </template>

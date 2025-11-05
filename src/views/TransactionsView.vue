@@ -8,6 +8,7 @@ import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import FilterToolbar from '@/components/FilterToolbar.vue'
+import CardBoxModal from '@/components/CardBoxModal.vue'
 import { listTransactions, updateTransaction, deleteTransaction } from '@/services/transactions'
 import { listContracts } from '@/services/contracts'
 import { listAttendances } from '@/services/attendances'
@@ -417,7 +418,7 @@ onMounted(async () => {
 
       <CardBox class="mb-4">
         <FilterToolbar>
-          <FormField label="Qidirish" class="min-w-[220px]">
+          <FormField label="Qidirish" class="w-full min-w-[240px] flex-1 md:max-w-2xl">
             <FormControl v-model="search" placeholder="ID, do'kon, rasta, mijoz..." />
           </FormField>
 
@@ -594,9 +595,18 @@ onMounted(async () => {
         </div>
       </CardBox>
 
-      <CardBox v-if="showForm" class="mt-4" is-form @submit.prevent="submitForm">
-        <SectionTitle>{{ `Tranzaksiya #${editingId} tahrirlash` }}</SectionTitle>
-        <div class="grid gap-4 md:grid-cols-2">
+      <CardBoxModal
+        v-model="showForm"
+        has-cancel
+        :close-on-confirm="false"
+        :confirm-disabled="loading"
+        button="success"
+        :button-label="loading ? 'Saqlanmoqda...' : 'Saqlash'"
+        :title="`Tranzaksiya #${editingId} tahrirlash`"
+        @confirm="submitForm"
+        @cancel="showForm = false"
+      >
+        <form class="grid gap-4 md:grid-cols-2" @submit.prevent="submitForm">
           <FormField label="Transaction ID">
             <FormControl v-model="form.transactionId" placeholder="T2001..." />
           </FormField>
@@ -625,14 +635,9 @@ onMounted(async () => {
           <FormField label="Attendance ID (ixtiyoriy)">
             <FormControl v-model.number="form.attendanceId" type="number" min="1" />
           </FormField>
-        </div>
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <BaseButton color="success" :disabled="loading" label="Saqlash" type="submit" />
-            <BaseButton color="info" outline label="Bekor qilish" :disabled="loading" @click="showForm = false" />
-          </div>
-        </template>
-      </CardBox>
+          <button type="submit" class="hidden" />
+        </form>
+      </CardBoxModal>
     </SectionMain>
   </LayoutAuthenticated>
 </template>
