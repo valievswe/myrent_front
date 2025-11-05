@@ -1,6 +1,8 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_PUBLIC_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const runtimeApiBase = typeof window !== 'undefined' ? `${window.location.origin}/api` : '/api'
+const API_BASE_URL =
+  import.meta.env.VITE_PUBLIC_API_URL || import.meta.env.VITE_API_URL || runtimeApiBase
 const PUBLIC_BASE_PATH = (import.meta.env.VITE_PUBLIC_PAY_PREFIX || '/public/pay').replace(/\/+$/, '')
 
 const publicHttp = axios.create({
