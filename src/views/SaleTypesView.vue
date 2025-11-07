@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
@@ -8,11 +8,16 @@ import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
+import PaginationControls from '@/components/PaginationControls.vue'
 import { listSaleTypes, createSaleType, updateSaleType, deleteSaleType } from '@/services/saleTypes'
 
 const items = ref([])
 const loading = ref(false)
 const errorMsg = ref('')
+const search = ref('')
+const page = ref(1)
+const limit = ref(10)
+const total = ref(0)
 
 const showForm = ref(false)
 const editingId = ref(null)
@@ -22,7 +27,13 @@ async function fetchData() {
   loading.value = true
   errorMsg.value = ''
   try {
-    items.value = await listSaleTypes()
+    const res = await listSaleTypes({
+      search: search.value || undefined,
+      page: page.value,
+      limit: limit.value,
+    })
+    items.value = res.data || []
+    total.value = Number(res.pagination?.total ?? items.value.length)
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || 'Yuklashda xatolik'
   } finally {
@@ -72,12 +83,38 @@ async function removeItem(id) {
   }
 }
 
+let searchTimer = null
+let suppressPaginationFetch = false
+let paginationTimer = null
+watch(
+  () => search.value,
+  () => {
+    page.value = 1
+    suppressPaginationFetch = true
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+      suppressPaginationFetch = false
+      fetchData()
+    }, 250)
+  },
+)
+watch(
+  () => [page.value, limit.value],
+  () => {
+    if (suppressPaginationFetch) return
+    if (paginationTimer) clearTimeout(paginationTimer)
+    paginationTimer = setTimeout(() => {
+      fetchData()
+    }, 0)
+  },
+)
+
 onMounted(fetchData)
 </script>
 
 <template>
   <LayoutAuthenticated>
-    <SectionMain>
+    <SectionMain wide>
       <SectionTitle first>Sotuv turlari</SectionTitle>
 
       <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -85,7 +122,10 @@ onMounted(fetchData)
       </div>
 
       <CardBox class="mb-4">
-        <div class="flex items-center justify-end">
+        <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <FormField class="w-full md:max-w-xl" label="Qidirish">
+            <FormControl v-model="search" placeholder="Nomi yoki izoh bo'yicha qidirish" />
+          </FormField>
           <BaseButton color="success" :disabled="loading" label="Yaratish" @click="openCreate" />
         </div>
       </CardBox>
@@ -131,6 +171,12 @@ onMounted(fetchData)
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          v-model:page="page"
+          v-model:limit="limit"
+          :total="total"
+          :disabled="loading"
+        />
       </CardBox>
 
       <CardBoxModal

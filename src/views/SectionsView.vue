@@ -104,7 +104,8 @@ const filteredItems = computed(() => {
 onMounted(async () => {
   await fetchData()
   try {
-    users.value = await listUsers({ role: 'CHECKER' })
+    const res = await listUsers({ role: 'CHECKER', limit: 500 })
+    users.value = Array.isArray(res) ? res : res.data || []
   } catch (e) {}
 })
 </script>

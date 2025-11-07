@@ -135,7 +135,8 @@ async function fetchData() {
 
 async function preloadRefs() {
   try {
-    saleTypes.value = await listSaleTypes()
+    const res = await listSaleTypes({ limit: 500 })
+    saleTypes.value = Array.isArray(res) ? res : res.data || []
   } catch {}
   try {
     sections.value = await listSections()

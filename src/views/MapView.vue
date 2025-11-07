@@ -12,6 +12,7 @@ import { listStores } from '@/services/stores'
 import { listStalls } from '@/services/stalls'
 import { listAttendances } from '@/services/attendances'
 import { listContracts } from '@/services/contracts'
+import PaginationControls from '@/components/PaginationControls.vue'
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -176,6 +177,38 @@ const filteredSections = computed(() => {
   return sectionsForDisplay.value.filter((s) => s.key === String(selectedSectionId.value))
 })
 
+const sectionPage = ref(1)
+const sectionLimit = ref(3)
+const paginatedSections = computed(() => {
+  const list = filteredSections.value || []
+  const start = (sectionPage.value - 1) * sectionLimit.value
+  return list.slice(start, start + sectionLimit.value)
+})
+
+watch(
+  () => filteredSections.value.length,
+  () => {
+    const totalPages = Math.max(1, Math.ceil((filteredSections.value.length || 0) / sectionLimit.value))
+    if (sectionPage.value > totalPages) sectionPage.value = totalPages
+    if (sectionPage.value < 1) sectionPage.value = 1
+  },
+)
+
+watch(
+  () => sectionLimit.value,
+  () => {
+    const totalPages = Math.max(1, Math.ceil((filteredSections.value.length || 0) / sectionLimit.value))
+    if (sectionPage.value > totalPages) sectionPage.value = totalPages
+  },
+)
+
+watch(
+  () => [selectedSectionId.value, typeFilter.value, search.value],
+  () => {
+    sectionPage.value = 1
+  },
+)
+
 function computeGrid(itemsCount) {
   const cols = Math.min(12, Math.max(4, Math.ceil(Math.sqrt(itemsCount || 1))))
   const style = { gridTemplateColumns: `repeat(${cols}, var(--block-size))` }
@@ -236,7 +269,7 @@ function openStall(it) {
 
 <template>
   <LayoutAuthenticated>
-    <SectionMain>
+    <SectionMain wide>
       <SectionTitle first>Raqamli Xarita (Bo'limlar, Do'konlar, Rastalar)</SectionTitle>
 
       <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">{{ errorMsg }}</div>
@@ -305,7 +338,7 @@ function openStall(it) {
 
       <div class="flex flex-col gap-6">
         <div
-          v-for="sec in filteredSections"
+          v-for="sec in paginatedSections"
           :key="sec.key"
           class="rounded border border-gray-200 p-4 dark:border-gray-700"
           :style="{ transform: `scale(${zoom})`, transformOrigin: 'top left' }"
@@ -371,6 +404,13 @@ function openStall(it) {
           </div>
         </div>
       </div>
+      <PaginationControls
+        v-model:page="sectionPage"
+        v-model:limit="sectionLimit"
+        :total="filteredSections.length"
+        :disabled="loading"
+        :limit-options="[1, 3, 5, 10]"
+      />
     </SectionMain>
   </LayoutAuthenticated>
 </template>

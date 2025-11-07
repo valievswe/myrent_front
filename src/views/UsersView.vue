@@ -8,6 +8,7 @@ import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
+import PaginationControls from '@/components/PaginationControls.vue'
 import { listUsers, createUser, updateUser, deleteUser } from '@/services/users'
 
 const items = ref([])
@@ -17,6 +18,9 @@ const errorMsg = ref('')
 const search = ref('')
 const role = ref('')
 const roles = ['CHECKER', 'ADMIN', 'SUPERADMIN']
+const page = ref(1)
+const limit = ref(10)
+const total = ref(0)
 
 const showForm = ref(false)
 const editingId = ref(null)
@@ -26,7 +30,14 @@ async function fetchData() {
   loading.value = true
   errorMsg.value = ''
   try {
-    items.value = await listUsers({ search: search.value, role: role.value || undefined })
+    const res = await listUsers({
+      search: search.value || undefined,
+      role: role.value || undefined,
+      page: page.value,
+      limit: limit.value,
+    })
+    items.value = res.data || []
+    total.value = Number(res.pagination?.total ?? items.value.length)
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || 'Yuklashda xatolik'
   } finally {
@@ -80,16 +91,30 @@ async function removeItem(id) {
 }
 
 onMounted(fetchData)
-let debounceId
+let filterDebounceId = null
+let suppressPaginationFetch = false
+let paginationTimer = null
 watch([search, role], () => {
-  if (debounceId) clearTimeout(debounceId)
-  debounceId = setTimeout(() => fetchData(), 300)
+  page.value = 1
+  suppressPaginationFetch = true
+  if (filterDebounceId) clearTimeout(filterDebounceId)
+  filterDebounceId = setTimeout(() => {
+    suppressPaginationFetch = false
+    fetchData()
+  }, 300)
+})
+watch([page, limit], () => {
+  if (suppressPaginationFetch) return
+  if (paginationTimer) clearTimeout(paginationTimer)
+  paginationTimer = setTimeout(() => {
+    fetchData()
+  }, 0)
 })
 </script>
 
 <template>
   <LayoutAuthenticated>
-    <SectionMain>
+    <SectionMain wide>
       <SectionTitle first>Foydalanuvchilar</SectionTitle>
 
       <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -147,6 +172,12 @@ watch([search, role], () => {
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          v-model:page="page"
+          v-model:limit="limit"
+          :total="total"
+          :disabled="loading"
+        />
       </CardBox>
 
       <CardBoxModal

@@ -1,8 +1,24 @@
 import http from './http'
 
-export async function listSaleTypes() {
-  const { data } = await http.get('/sale-types')
-  return data
+export async function listSaleTypes({ search = '', page = 1, limit = 10 } = {}) {
+  const params = { page, limit }
+  if (search) params.search = search
+  const { data } = await http.get('/sale-types', { params })
+  if (Array.isArray(data)) {
+    return {
+      data,
+      pagination: {
+        total: data.length,
+        page: 1,
+        limit: data.length,
+        totalPages: 1,
+      },
+    }
+  }
+  return {
+    data: data.data ?? [],
+    pagination: data.pagination ?? null,
+  }
 }
 
 export async function createSaleType(payload) {
@@ -19,4 +35,3 @@ export async function deleteSaleType(id) {
   const { data } = await http.delete(`/sale-types/${id}`)
   return data
 }
-

@@ -8,6 +8,7 @@ import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
+import PaginationControls from '@/components/PaginationControls.vue'
 import {
   listAttendances,
   createAttendance,
@@ -348,16 +349,36 @@ async function exportAttendancesCSV() {
   }
 }
 
-watch([bulkDate, stallSearchBulk, stallPage, stallLimit], async () => {
+watch(bulkDate, async () => {
   await loadAttendancesForDate()
-  await loadStallsBulk()
+})
+
+let bulkSearchTimer = null
+watch(
+  () => stallSearchBulk.value,
+  () => {
+    stallPage.value = 1
+    if (bulkSearchTimer) clearTimeout(bulkSearchTimer)
+    bulkSearchTimer = setTimeout(() => {
+      loadStallsBulk()
+    }, 250)
+  },
+)
+
+let stallPaginationTimer = null
+watch([stallPage, stallLimit], () => {
+  if (stallPaginationTimer) clearTimeout(stallPaginationTimer)
+  stallPaginationTimer = setTimeout(() => {
+    loadStallsBulk()
+  }, 0)
 })
 onMounted(async () => {
   try {
     sections.value = await listSections()
   } catch {}
   try {
-    saleTypes.value = await listSaleTypes()
+    const res = await listSaleTypes({ limit: 500 })
+    saleTypes.value = Array.isArray(res) ? res : res.data || []
   } catch {}
   await loadAttendancesForDate()
   await loadStallsBulk()
@@ -366,7 +387,7 @@ onMounted(async () => {
 
 <template>
   <LayoutAuthenticated>
-    <SectionMain>
+    <SectionMain wide>
       <SectionTitle first>Kunlik Rasta To'lovlari (Attendance)</SectionTitle>
 
       <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -573,22 +594,15 @@ onMounted(async () => {
             </tbody>
           </table>
         </div>
-        <div class="flex items-center justify-between px-4 py-3">
-          <div>Jami: {{ displayedStalls.length }} (umumiy: {{ stallTotal }})</div>
-          <div class="flex items-center gap-2">
-            <BaseButton
-              :disabled="stallPage <= 1 || bulkLoading"
-              label="Oldingi"
-              @click="(stallPage--, loadStallsBulk())"
-            />
-            <span>Sahifa {{ stallPage }}</span>
-            <BaseButton
-              :disabled="stallsBulk.length < stallLimit || bulkLoading"
-              label="Keyingi"
-              @click="(stallPage++, loadStallsBulk())"
-            />
-          </div>
+        <div class="px-4 pt-4 text-sm text-gray-600 dark:text-gray-300">
+          Filtrlangan: {{ displayedStalls.length }} ta — Umumiy: {{ stallTotal }}
         </div>
+        <PaginationControls
+          v-model:page="stallPage"
+          v-model:limit="stallLimit"
+          :total="stallTotal"
+          :disabled="bulkLoading"
+        />
       </CardBox>
 
       <CardBoxModal

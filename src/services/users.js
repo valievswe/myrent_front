@@ -1,11 +1,25 @@
 import http from './http'
 
-export async function listUsers({ search = '', role } = {}) {
-  const params = {}
+export async function listUsers({ search = '', role, page = 1, limit = 10 } = {}) {
+  const params = { page, limit }
   if (search) params.search = search
   if (role) params.role = role
   const { data } = await http.get('/users', { params })
-  return data
+  if (Array.isArray(data)) {
+    return {
+      data,
+      pagination: {
+        total: data.length,
+        page: 1,
+        limit: data.length,
+        totalPages: 1,
+      },
+    }
+  }
+  return {
+    data: data.data ?? [],
+    pagination: data.pagination ?? null,
+  }
 }
 
 export async function createUser(payload) {

@@ -9,6 +9,7 @@ import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import FilterToolbar from '@/components/FilterToolbar.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
+import PaginationControls from '@/components/PaginationControls.vue'
 import { listTransactions, updateTransaction, deleteTransaction } from '@/services/transactions'
 import { listContracts } from '@/services/contracts'
 import { listAttendances } from '@/services/attendances'
@@ -29,8 +30,6 @@ const dateTo = ref('')
 const page = ref(1)
 const limit = ref(15)
 const total = ref(0)
-const hasNextPage = computed(() => page.value * limit.value < total.value)
-const hasPrevPage = computed(() => page.value > 1)
 
 const editingId = ref(null)
 const showForm = ref(false)
@@ -150,6 +149,7 @@ function resetFilters() {
   sourceFilter.value = 'all'
   dateFrom.value = ''
   dateTo.value = ''
+  page.value = 1
   fetchData()
 }
 
@@ -299,19 +299,28 @@ async function refreshDebt() {
 }
 
 let debounceId
+let suppressPaginationFetch = false
+let paginationTimer = null
 watch(search, () => {
   page.value = 1
+  suppressPaginationFetch = true
   if (debounceId) clearTimeout(debounceId)
   debounceId = setTimeout(() => {
+    suppressPaginationFetch = false
     fetchData()
   }, 300)
 })
 
 watch(
   () => [statusFilter.value, methodFilter.value, sourceFilter.value],
-  () => {
+  async () => {
     page.value = 1
-    fetchData()
+    suppressPaginationFetch = true
+    try {
+      await fetchData()
+    } finally {
+      suppressPaginationFetch = false
+    }
   }
 )
 
@@ -321,13 +330,20 @@ watch(
     if (debounceId) clearTimeout(debounceId)
     debounceId = setTimeout(() => {
       page.value = 1
-      fetchData()
+      suppressPaginationFetch = true
+      fetchData().finally(() => {
+        suppressPaginationFetch = false
+      })
     }, 200)
   }
 )
 
 watch([page, limit], () => {
-  fetchData()
+  if (suppressPaginationFetch) return
+  if (paginationTimer) clearTimeout(paginationTimer)
+  paginationTimer = setTimeout(() => {
+    fetchData()
+  }, 0)
 })
 
 onMounted(async () => {
@@ -514,19 +530,22 @@ onMounted(async () => {
                   </td>
                   <td class="px-4 py-2">{{ it.paymentMethod }}</td>
                   <td class="px-4 py-2">
-                    <div v-if="it.contract">
-                      <div class="font-medium">Shartnoma #{{ it.contractId }}</div>
-                      <div class="text-xs text-gray-500">
-                        {{ it.contract?.owner?.fullName || '' }} • {{ it.contract?.store?.storeNumber || '' }}
+                    <template v-if="it.contract">
+                      <div class="font-medium">
+                        {{ it.contract?.owner?.fullName || `Shartnoma #${it.contractId}` }}
                       </div>
-                    </div>
-                    <div v-else-if="it.attendance">
-                      <div class="font-medium">Attendance #{{ it.attendanceId }}</div>
                       <div class="text-xs text-gray-500">
-                        Rasta #{{ it.attendance?.stallId }} •
-                        {{ it.attendance?.date ? it.attendance.date.substring(0, 10) : '' }}
+                        Do'kon: {{ it.contract?.store?.storeNumber || it.contract?.storeId || '-' }}
                       </div>
-                    </div>
+                    </template>
+                    <template v-else-if="it.attendance">
+                      <div class="font-medium">
+                        {{ it.attendance?.Stall?.stallNumber || `Rasta #${it.attendance?.stallId}` }}
+                      </div>
+                      <div class="text-xs text-gray-500">
+                        {{ it.attendance?.Stall?.description || `ID: ${it.attendance?.stallId ?? '-'}` }}
+                      </div>
+                    </template>
                     <div v-else class="text-xs text-gray-500">-</div>
                   </td>
                   <td class="px-4 py-2">
@@ -585,14 +604,12 @@ onMounted(async () => {
           </table>
         </div>
 
-        <div class="flex items-center justify-between px-4 py-3">
-          <div>Jami: {{ total }}</div>
-          <div class="flex items-center gap-2">
-            <BaseButton :disabled="!hasPrevPage || loading" label="Oldingi" @click="page--" />
-            <span>Sahifa {{ page }}</span>
-            <BaseButton :disabled="!hasNextPage || loading" label="Keyingi" @click="page++" />
-          </div>
-        </div>
+        <PaginationControls
+          v-model:page="page"
+          v-model:limit="limit"
+          :total="total"
+          :disabled="loading"
+        />
       </CardBox>
 
       <CardBoxModal

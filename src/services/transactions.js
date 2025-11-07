@@ -10,6 +10,7 @@ export async function listTransactions({
   dateTo,
   contractId,
   attendanceId,
+  source,
 } = {}) {
   const params = { search, page, limit }
   if (status) params.status = status
@@ -18,6 +19,7 @@ export async function listTransactions({
   if (dateTo) params.dateTo = dateTo
   if (contractId) params.contractId = contractId
   if (attendanceId) params.attendanceId = attendanceId
+  if (source) params.source = source
 
   const { data } = await http.get('/transactions', { params })
   return data
