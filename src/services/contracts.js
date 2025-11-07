@@ -1,8 +1,11 @@
 import http from './http'
 
-export async function listContracts({ page = 1, limit = 10, isActive } = {}) {
-  const params = { page, limit }
-  if (typeof isActive === 'boolean') params.isActive = isActive
+export async function listContracts(options = {}) {
+  const { page = 1, limit = 10, ...rest } = options
+  const params = { page, limit, ...rest }
+  Object.keys(params).forEach((key) => {
+    if (params[key] === undefined || params[key] === null) delete params[key]
+  })
   const { data } = await http.get('/contracts', { params })
   return data // { data, pagination }
 }

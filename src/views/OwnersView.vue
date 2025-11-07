@@ -8,6 +8,7 @@ import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
+import PaginationControls from '@/components/PaginationControls.vue'
 import { listOwners, createOwner, updateOwner, deleteOwner } from '@/services/owners'
 
 const items = ref([])
@@ -15,7 +16,7 @@ const loading = ref(false)
 const errorMsg = ref('')
 const search = ref('')
 const page = ref(1)
-const limit = ref(10)
+const limit = ref(15)
 const total = ref(0)
 
 const showForm = ref(false)
@@ -26,9 +27,19 @@ async function fetchData() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const res = await listOwners({ search: search.value, page: page.value, limit: limit.value })
-    items.value = res.data
-    total.value = res.pagination.total
+    const res = await listOwners({
+      search: search.value ? search.value.trim() : undefined,
+      page: page.value,
+      limit: limit.value,
+    })
+    items.value = res.data || []
+    total.value = Number(res.pagination?.total ?? res.total ?? items.value.length)
+    const maxPage = Math.max(1, Math.ceil(total.value / (limit.value || 1)))
+    if (page.value > maxPage) {
+      suppressPaginationFetch = true
+      page.value = maxPage
+      suppressPaginationFetch = false
+    }
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || 'Yuklashda xatolik'
   } finally {
@@ -86,13 +97,24 @@ async function removeItem(id) {
 }
 
 onMounted(fetchData)
-let debounceId = null
-watch(() => search.value, () => {
-  page.value = 1
-  if (debounceId) clearTimeout(debounceId)
-  debounceId = setTimeout(() => {
-    fetchData()
+
+let searchDebounceId = null
+let suppressPaginationFetch = false
+
+watch(search, () => {
+  if (searchDebounceId) clearTimeout(searchDebounceId)
+  searchDebounceId = setTimeout(() => {
+    suppressPaginationFetch = true
+    page.value = 1
+    fetchData().finally(() => {
+      suppressPaginationFetch = false
+    })
   }, 300)
+})
+
+watch([page, limit], () => {
+  if (suppressPaginationFetch) return
+  fetchData()
 })
 </script>
 
@@ -169,22 +191,13 @@ watch(() => search.value, () => {
             </tbody>
           </table>
         </div>
-        <div class="flex items-center justify-between px-4 py-3">
-          <div>Jami: {{ total }}</div>
-          <div class="flex items-center gap-2">
-            <BaseButton
-              :disabled="page <= 1 || loading"
-              label="Oldingi"
-              @click="page--; fetchData()"
-            />
-            <span>Sahifa {{ page }}</span>
-            <BaseButton
-              :disabled="items.length < limit || loading"
-              label="Keyingi"
-              @click="page++; fetchData()"
-            />
-          </div>
-        </div>
+        <PaginationControls
+          v-model:page="page"
+          v-model:limit="limit"
+          :total="total"
+          :disabled="loading"
+          :limit-options="[15, 30, 50, 100]"
+        />
       </CardBox>
 
       <CardBoxModal

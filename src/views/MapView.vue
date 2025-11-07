@@ -25,10 +25,18 @@ const attendanceMap = ref({}) // { [stallId]: 'PAID'|'UNPAID' }
 const storePaidMap = ref({}) // { [storeId]: boolean }
 
 const typeFilter = ref('both') // both | stores | stalls
+const typeOptions = [
+  { value: 'both', label: "Ikkalasi" },
+  { value: 'stores', label: "Do'konlar" },
+  { value: 'stalls', label: 'Rastalar' },
+]
 const selectedSectionId = ref(null)
 const date = ref(new Date().toISOString().substring(0, 10))
 const search = ref('')
 const zoom = ref(1)
+const zoomPercent = computed(() => Math.round(zoom.value * 100))
+const storeCellSize = computed(() => `${Math.round(56 * zoom.value)}px`)
+const stallCellSize = computed(() => `${Math.round(48 * zoom.value)}px`)
 
 const NO_SECTION_KEY = '__no_section__'
 
@@ -198,6 +206,61 @@ const paginatedSections = computed(() => {
   return list.slice(start, start + sectionLimit.value)
 })
 
+const sectionCards = computed(() =>
+  (paginatedSections.value || []).map((sec) => {
+    const storeList = filterStoresBySection(sec.key)
+    const stallList = filterStallsBySection(sec.key)
+    const storeBusy = storeList.filter((s) => isStoreOccupied(s)).length
+    const storePaid = storeList.filter((s) => isStorePaid(s)).length
+    const stallPaid = stallList.filter((st) => getAttendanceStatus(st.id) === 'PAID').length
+    const stallUnpaid = stallList.filter((st) => getAttendanceStatus(st.id) === 'UNPAID').length
+    const stallNone = Math.max(0, stallList.length - stallPaid - stallUnpaid)
+    return {
+      ...sec,
+      storeList,
+      stallList,
+      stats: {
+        store: {
+          total: storeList.length,
+          busy: storeBusy,
+          free: Math.max(0, storeList.length - storeBusy),
+          paid: storePaid,
+        },
+        stall: {
+          total: stallList.length,
+          paid: stallPaid,
+          unpaid: stallUnpaid,
+          none: stallNone,
+        },
+      },
+    }
+  }),
+)
+
+const overallSummary = computed(() => {
+  const summary = {
+    stores: 0,
+    storesBusy: 0,
+    storesFree: 0,
+    storesPaid: 0,
+    stalls: 0,
+    stallsPaid: 0,
+    stallsUnpaid: 0,
+    stallsNone: 0,
+  }
+  for (const sec of sectionCards.value || []) {
+    summary.stores += sec.stats.store.total
+    summary.storesBusy += sec.stats.store.busy
+    summary.storesFree += sec.stats.store.free
+    summary.storesPaid += sec.stats.store.paid
+    summary.stalls += sec.stats.stall.total
+    summary.stallsPaid += sec.stats.stall.paid
+    summary.stallsUnpaid += sec.stats.stall.unpaid
+    summary.stallsNone += sec.stats.stall.none
+  }
+  return summary
+})
+
 watch(
   () => filteredSections.value.length,
   () => {
@@ -222,10 +285,11 @@ watch(
   },
 )
 
-function computeGrid(itemsCount) {
-  const cols = Math.min(12, Math.max(4, Math.ceil(Math.sqrt(itemsCount || 1))))
-  const style = { gridTemplateColumns: `repeat(${cols}, var(--block-size))` }
-  return { cols, style }
+function gridStyle(itemsCount, cellSize) {
+  const cols = Math.min(12, Math.max(2, Math.ceil(Math.sqrt(itemsCount || 1))))
+  return {
+    gridTemplateColumns: `repeat(${cols}, minmax(${cellSize}, 1fr))`,
+  }
 }
 
 const normSearch = computed(() => (search.value || '').trim().toLowerCase())
@@ -319,16 +383,27 @@ function stallTooltip(stall) {
       </div>
 
       <CardBox class="mb-4">
-        <div class="flex flex-wrap items-end gap-3">
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
           <FormField label="Turi">
-            <div class="flex items-center gap-2">
-              <label class="flex items-center gap-1 text-sm"><input type="radio" value="both" v-model="typeFilter" /> Ikkalasi</label>
-              <label class="flex items-center gap-1 text-sm"><input type="radio" value="stores" v-model="typeFilter" /> Do'konlar</label>
-              <label class="flex items-center gap-1 text-sm"><input type="radio" value="stalls" v-model="typeFilter" /> Rastalar</label>
+            <div class="flex flex-wrap gap-2">
+              <label
+                v-for="opt in typeOptions"
+                :key="opt.value"
+                class="flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1 text-sm font-medium transition"
+                :class="typeFilter === opt.value
+                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-500/10 dark:text-emerald-100'
+                  : 'border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-300'"
+              >
+                <input type="radio" class="sr-only" :value="opt.value" v-model="typeFilter" />
+                <span>{{ opt.label }}</span>
+              </label>
             </div>
           </FormField>
           <FormField label="Bo'lim">
-            <select v-model="selectedSectionId" class="w-56 rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100">
+            <select
+              v-model="selectedSectionId"
+              class="w-full rounded border border-gray-300 px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+            >
               <option :value="null">Barchasi</option>
               <option v-for="s in sectionsForDisplay" :key="s.key" :value="s.key">{{ s.name }}</option>
             </select>
@@ -337,117 +412,174 @@ function stallTooltip(stall) {
             <FormControl v-model="date" type="date" />
           </FormField>
           <FormField label="Qidirish">
-            <FormControl v-model="search" placeholder="Do'kon raqami yoki Rasta izohi" />
+            <FormControl v-model="search" placeholder="Do'kon raqami yoki rasta izohi" />
           </FormField>
           <FormField label="Masshtab">
-            <input type="range" min="0.75" max="1.5" step="0.05" v-model.number="zoom" />
+            <div class="flex items-center gap-3">
+              <input
+                type="range"
+                min="0.75"
+                max="1.5"
+                step="0.05"
+                v-model.number="zoom"
+                class="h-2 w-full accent-emerald-500"
+              />
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ zoomPercent }}%</div>
+            </div>
           </FormField>
         </div>
       </CardBox>
 
       <CardBox class="mb-4">
-      <div class="flex items-center gap-6 px-4 py-2 text-sm">
-        <div class="font-semibold">Afsona</div>
-        <div class="flex items-center gap-2">
-          <span class="h-3 w-3 rounded-sm bg-green-500 inline-block"></span>
-          <span>Do'kon: To'langan</span>
+        <div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+          <div class="flex items-center gap-2">
+            <span class="inline-block h-3 w-3 rounded-sm bg-green-500"></span>
+            <span>Do'kon: To'langan</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="inline-block h-3 w-3 rounded-sm bg-red-500"></span>
+            <span>Do'kon: To'lanmagan</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="inline-block h-3 w-3 rounded-sm bg-slate-500"></span>
+            <span>Do'kon: Bo'sh</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="inline-block h-3 w-3 rounded-sm bg-gray-400"></span>
+            <span>Rasta: Bugun yo'q</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="inline-block h-3 w-3 rounded-sm bg-red-500"></span>
+            <span>Rasta: UNPAID</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="inline-block h-3 w-3 rounded-sm bg-green-500"></span>
+            <span>Rasta: PAID</span>
+          </div>
         </div>
-        <div class="flex items-center gap-2">
-          <span class="h-3 w-3 rounded-sm bg-red-500 inline-block"></span>
-          <span>Do'kon: To'lanmagan</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="h-3 w-3 rounded-sm bg-slate-500 inline-block"></span>
-          <span>Do'kon: Bo'sh</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="h-3 w-3 rounded-sm bg-gray-400 inline-block"></span>
-          <span>Rasta: Bugun yo'q</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="h-3 w-3 rounded-sm bg-red-500 inline-block"></span>
-          <span>Rasta: UNPAID</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="h-3 w-3 rounded-sm bg-green-500 inline-block"></span>
-          <span>Rasta: PAID</span>
-        </div>
-      </div>
       </CardBox>
 
-      <div class="flex flex-col gap-6">
-        <div
-          v-for="sec in paginatedSections"
-          :key="sec.key"
-          class="rounded border border-gray-200 p-4 dark:border-gray-700"
-          :style="{ transform: `scale(${zoom})`, transformOrigin: 'top left' }"
-        >
-          <div class="mb-3 flex items-center justify-between">
-            <div class="text-lg font-semibold">{{ sec.name }}</div>
-            <div class="text-sm text-gray-500">
-              ID: {{ sec.id ?? '—' }}
+      <CardBox class="mb-4">
+        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-lg border border-slate-200 p-4 text-slate-700 dark:border-slate-700 dark:text-slate-200">
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Do'konlar</div>
+            <div class="text-2xl font-semibold">{{ overallSummary.stores }}</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Tanlangan bo'limlarda</div>
+          </div>
+          <div class="rounded-lg border border-slate-200 p-4 text-slate-700 dark:border-slate-700 dark:text-slate-200">
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Band / Bo'sh</div>
+            <div class="text-2xl font-semibold text-amber-600">{{ overallSummary.storesBusy }}</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Bo'sh: {{ overallSummary.storesFree }}</div>
+          </div>
+          <div class="rounded-lg border border-slate-200 p-4 text-slate-700 dark:border-slate-700 dark:text-slate-200">
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">To'langan do'konlar</div>
+            <div class="text-2xl font-semibold text-emerald-600">{{ overallSummary.storesPaid }}</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Jami: {{ overallSummary.stores }}</div>
+          </div>
+          <div class="rounded-lg border border-slate-200 p-4 text-slate-700 dark:border-slate-700 dark:text-slate-200">
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Rastalar</div>
+            <div class="text-2xl font-semibold text-sky-600">{{ overallSummary.stalls }}</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">
+              PAID: {{ overallSummary.stallsPaid }}, UNPAID: {{ overallSummary.stallsUnpaid }}, Yo'q:
+              {{ overallSummary.stallsNone }}
             </div>
           </div>
-          <div class="space-y-4">
-            <div v-if="typeFilter === 'both' || typeFilter === 'stores'">
-              <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                <template v-if="filterStoresBySection(sec.key).length">
-                  <span>Do'konlar: {{ filterStoresBySection(sec.key).length }}</span>
-                  <span class="ml-3 text-xs text-gray-500">
-                    Bo'sh: {{ filterStoresBySection(sec.key).filter(s => !isStoreOccupied(s)).length }},
-                    Band: {{ filterStoresBySection(sec.key).filter(s => isStoreOccupied(s)).length }},
-                    To'langan: {{ filterStoresBySection(sec.key).filter(s => isStorePaid(s)).length }}
-                  </span>
-                </template>
-                <template v-else>Do'konlar (0)</template>
+        </div>
+      </CardBox>
+
+      <div v-if="!loading && !sectionCards.length" class="rounded border border-dashed border-gray-300 p-6 text-center text-gray-500 dark:border-gray-700">
+        Tanlangan filtr bo'yicha bo'lim topilmadi.
+      </div>
+      <div v-else class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div
+          v-for="card in sectionCards"
+          :key="card.key"
+          class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900"
+        >
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="text-lg font-semibold text-slate-800 dark:text-slate-100">{{ card.name }}</div>
+              <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                ID: {{ card.id ?? '—' }}
               </div>
-              <div class="grid gap-2" :style="computeGrid(filterStoresBySection(sec.key).length).style" style="--block-size: 56px">
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs font-medium text-slate-600 dark:text-slate-200">
+              <span class="rounded-full border border-slate-200 px-3 py-1 dark:border-slate-600">
+                Do'kon: {{ card.storeList.length }}
+              </span>
+              <span class="rounded-full border border-slate-200 px-3 py-1 dark:border-slate-600">
+                Rasta: {{ card.stallList.length }}
+              </span>
+            </div>
+          </div>
+          <div class="space-y-5">
+            <div v-if="typeFilter === 'both' || typeFilter === 'stores'">
+              <div class="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm font-medium text-gray-700 dark:text-gray-200">
+                <span>Do'konlar ({{ card.stats.store.total }})</span>
+                <span class="text-xs font-normal text-gray-500 dark:text-gray-400">
+                  Bo'sh: {{ card.stats.store.free }} · Band: {{ card.stats.store.busy }} · To'langan: {{ card.stats.store.paid }}
+                </span>
+              </div>
+              <div
+                v-if="card.storeList.length"
+                class="grid gap-2"
+                :style="gridStyle(card.storeList.length, storeCellSize)"
+              >
                 <div
-                  v-for="s in filterStoresBySection(sec.key)"
+                  v-for="s in card.storeList"
                   :key="s.id"
-                  class="flex h-14 w-14 cursor-pointer items-center justify-center rounded text-xs text-white"
+                  class="flex cursor-pointer flex-col items-center justify-center rounded-lg px-2 text-center text-xs font-semibold text-white shadow-sm transition hover:shadow-md"
                   :class="storeColor(s)"
+                  :style="{ minHeight: storeCellSize }"
                   :title="storeTooltip(s)"
                   @click="openStore(s)"
                 >
-                  <div class="text-center leading-tight">
-                    <div class="text-[11px] font-semibold">
-                      {{ s.storeNumber || `#${s.id}` }}
-                    </div>
-                    <div class="text-[9px] text-white/80">ID: #{{ s.id }}</div>
+                  <div class="text-[11px] font-semibold">
+                    {{ s.storeNumber || `#${s.id}` }}
                   </div>
+                  <div class="text-[10px] text-white/80">ID: #{{ s.id }}</div>
                 </div>
+              </div>
+              <div
+                v-else
+                class="rounded border border-dashed border-gray-200 px-3 py-2 text-sm text-gray-500 dark:border-gray-700"
+              >
+                Bu bo'limda do'kon mavjud emas
               </div>
             </div>
 
             <div v-if="typeFilter === 'both' || typeFilter === 'stalls'">
-              <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                <template v-if="filterStallsBySection(sec.key).length">
-                  <span>Rastalar: {{ filterStallsBySection(sec.key).length }}</span>
-                  <span class="ml-3 text-xs text-gray-500">
-                    PAID: {{ filterStallsBySection(sec.key).filter(st => getAttendanceStatus(st.id) === 'PAID').length }},
-                    UNPAID: {{ filterStallsBySection(sec.key).filter(st => getAttendanceStatus(st.id) === 'UNPAID').length }},
-                    Yo'q: {{ filterStallsBySection(sec.key).filter(st => !getAttendanceStatus(st.id)).length }}
-                  </span>
-                </template>
-                <template v-else>Rastalar (0)</template>
+              <div class="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm font-medium text-gray-700 dark:text-gray-200">
+                <span>Rastalar ({{ card.stats.stall.total }})</span>
+                <span class="text-xs font-normal text-gray-500 dark:text-gray-400">
+                  PAID: {{ card.stats.stall.paid }} · UNPAID: {{ card.stats.stall.unpaid }} · Yo'q: {{ card.stats.stall.none }}
+                </span>
               </div>
-              <div class="grid gap-2" :style="computeGrid(filterStallsBySection(sec.key).length).style" style="--block-size: 48px">
+              <div
+                v-if="card.stallList.length"
+                class="grid gap-2"
+                :style="gridStyle(card.stallList.length, stallCellSize)"
+              >
                 <div
-                  v-for="st in filterStallsBySection(sec.key)"
+                  v-for="st in card.stallList"
                   :key="st.id"
-                  class="flex h-12 w-12 cursor-pointer items-center justify-center rounded text-xs text-white"
+                  class="flex cursor-pointer flex-col items-center justify-center rounded-lg px-2 text-center text-xs font-semibold text-white shadow-sm transition hover:shadow-md"
                   :class="stallColor(st)"
+                  :style="{ minHeight: stallCellSize }"
                   :title="stallTooltip(st)"
                   @click="openStall(st)"
                 >
-                  <div class="text-center leading-tight">
-                    <div class="text-[11px] font-semibold">
-                      {{ st.stallNumber || `#${st.id}` }}
-                    </div>
-                    <div class="text-[9px] text-white/80">ID: #{{ st.id }}</div>
+                  <div class="text-[11px] font-semibold">
+                    {{ st.stallNumber || `#${st.id}` }}
                   </div>
+                  <div class="text-[10px] text-white/80">ID: #{{ st.id }}</div>
                 </div>
+              </div>
+              <div
+                v-else
+                class="rounded border border-dashed border-gray-200 px-3 py-2 text-sm text-gray-500 dark:border-gray-700"
+              >
+                Bu bo'limda rasta mavjud emas
               </div>
             </div>
           </div>
@@ -463,9 +595,3 @@ function stallTooltip(stall) {
     </SectionMain>
   </LayoutAuthenticated>
 </template>
-
-<style scoped>
-.grid {
-  display: grid;
-}
-</style>
