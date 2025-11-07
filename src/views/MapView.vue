@@ -51,6 +51,19 @@ function toArray(payload) {
   return []
 }
 
+async function fetchContractsForMap({ pageSize = 200, maxPages = 10 } = {}) {
+  const aggregated = []
+  let currentPage = 1
+  while (currentPage <= maxPages) {
+    const res = await listContracts({ page: currentPage, limit: pageSize })
+    const chunk = toArray(res)
+    aggregated.push(...chunk)
+    if (chunk.length < pageSize) break
+    currentPage += 1
+  }
+  return aggregated
+}
+
 async function fetchAll() {
   loading.value = true
   errorMsg.value = ''
@@ -61,7 +74,7 @@ async function fetchAll() {
       // Backend defaults to only free; request all for the map
       listStores({ page: 1, limit: 1000, withContracts: true, onlyFree: false }),
       listStalls({ page: 1, limit: 1000 }),
-      listContracts({ page: 1, limit: 1000 }).catch((err) => {
+      fetchContractsForMap().catch((err) => {
         const status = err?.response?.status
         if (status === 401 || status === 403) {
           contractsWarning.value =
@@ -237,7 +250,9 @@ function filterStallsBySection(sectionId) {
 }
 
 function storeColor(s) {
-  return isStoreOccupied(s) ? 'bg-red-500' : 'bg-green-500'
+  if (isStorePaid(s)) return 'bg-green-500'
+  if (isStoreOccupied(s)) return 'bg-red-500'
+  return 'bg-gray-400'
 }
 function stallColor(st) {
   const stStatus = attendanceMap.value[st.id]
@@ -254,16 +269,36 @@ function getAttendanceStatus(stallId) {
 }
 
 function openStore(it) {
-  // minimal: just alert; could open side panel later
   try {
-    alert(`Do'kon: ${it.storeNumber}\nBo'lim: ${it.sectionId}\nHolat: ${isStoreOccupied(it) ? 'Band' : "Bo'sh"}\nTo'lov: ${isStorePaid(it) ? "To'langan" : 'Kutilmoqda'}`)
+    alert(
+      `Do'kon: ${it.storeNumber || `#${it.id}`}\nBo'lim: ${
+        it.sectionId ?? '-'
+      }\nHolat: ${isStoreOccupied(it) ? 'Band' : "Bo'sh"}\nTo'lov: ${
+        isStorePaid(it) ? "To'langan" : "To'lanmagan"
+      }`,
+    )
   } catch {}
 }
 function openStall(it) {
   const stStatus = attendanceMap.value[it.id] || '-'
   try {
-    alert(`Rasta #${it.id}\nBo'lim: ${it.sectionId}\nBugun: ${stStatus}`)
+    alert(
+      `Rasta: ${it.stallNumber || `#${it.id}`}\nID: #${it.id}\nBo'lim: ${
+        it.sectionId ?? '-'
+      }\nBugun: ${stStatus}`,
+    )
   } catch {}
+}
+
+function storeTooltip(store) {
+  const status = isStoreOccupied(store) ? 'Band' : "Bo'sh"
+  const payment = isStorePaid(store) ? "To'langan" : "To'lanmagan"
+  return `Do'kon: ${store.storeNumber || `#${store.id}`}\nID: #${store.id}\nHolat: ${status}\nTo'lov: ${payment}`
+}
+
+function stallTooltip(stall) {
+  const paidStatus = getAttendanceStatus(stall.id) || '-'
+  return `Rasta: ${stall.stallNumber || `#${stall.id}`}\nID: #${stall.id}\nBugun: ${paidStatus}\nIzoh: ${stall.description || '-'}`
 }
 </script>
 
@@ -315,11 +350,15 @@ function openStall(it) {
         <div class="font-semibold">Afsona</div>
         <div class="flex items-center gap-2">
           <span class="h-3 w-3 rounded-sm bg-green-500 inline-block"></span>
-          <span>Do'kon: Bo'sh</span>
+          <span>Do'kon: To'langan</span>
         </div>
         <div class="flex items-center gap-2">
           <span class="h-3 w-3 rounded-sm bg-red-500 inline-block"></span>
-          <span>Do'kon: Band</span>
+          <span>Do'kon: To'lanmagan</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="h-3 w-3 rounded-sm bg-slate-500 inline-block"></span>
+          <span>Do'kon: Bo'sh</span>
         </div>
         <div class="flex items-center gap-2">
           <span class="h-3 w-3 rounded-sm bg-gray-400 inline-block"></span>
@@ -368,10 +407,15 @@ function openStall(it) {
                   :key="s.id"
                   class="flex h-14 w-14 cursor-pointer items-center justify-center rounded text-xs text-white"
                   :class="storeColor(s)"
-                  :title="`#${s.id} ${s.storeNumber || ''}\nHolat: ${isStoreOccupied(s) ? 'Band' : 'Bo\'sh'}\nTo'lov: ${isStorePaid(s) ? 'To\'langan' : 'Kutilmoqda'}`"
+                  :title="storeTooltip(s)"
                   @click="openStore(s)"
                 >
-                  {{ s.storeNumber || s.id }}
+                  <div class="text-center leading-tight">
+                    <div class="text-[11px] font-semibold">
+                      {{ s.storeNumber || `#${s.id}` }}
+                    </div>
+                    <div class="text-[9px] text-white/80">ID: #{{ s.id }}</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -394,10 +438,15 @@ function openStall(it) {
                   :key="st.id"
                   class="flex h-12 w-12 cursor-pointer items-center justify-center rounded text-xs text-white"
                   :class="stallColor(st)"
-                  :title="`#${st.id} ${st.description || ''}\nBugun: ${getAttendanceStatus(st.id) || '-'}`"
+                  :title="stallTooltip(st)"
                   @click="openStall(st)"
                 >
-                  #{{ st.id }}
+                  <div class="text-center leading-tight">
+                    <div class="text-[11px] font-semibold">
+                      {{ st.stallNumber || `#${st.id}` }}
+                    </div>
+                    <div class="text-[9px] text-white/80">ID: #{{ st.id }}</div>
+                  </div>
                 </div>
               </div>
             </div>

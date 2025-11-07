@@ -9,6 +9,7 @@ import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
+import PaginationControls from '@/components/PaginationControls.vue'
 import { listStalls, createStall, updateStall, deleteStall } from '@/services/stalls'
 import { listAttendances } from '@/services/attendances'
 import { listSaleTypes } from '@/services/saleTypes'
@@ -61,13 +62,6 @@ const totalPages = computed(() => {
   const size = Math.max(1, limit.value || 1)
   const count = Math.ceil((total.value || 0) / size)
   return Number.isFinite(count) && count > 0 ? count : 1
-})
-
-const showingRange = computed(() => {
-  if (!items.value.length) return { start: 0, end: 0 }
-  const start = (page.value - 1) * (limit.value || 1) + 1
-  const end = start + items.value.length - 1
-  return { start, end }
 })
 
 let searchDebounceId = null
@@ -212,15 +206,6 @@ async function toggleAttendance(it) {
   }
 }
 
-function goToPrevPage() {
-  if (page.value <= 1) return
-  page.value -= 1
-}
-
-function goToNextPage() {
-  if (page.value >= totalPages.value) return
-  page.value += 1
-}
 
 const getSectionName = (id) => sections.value.find((s) => s.id === id)?.name || (id ?? '-')
 const getSaleType = (id) => saleTypes.value.find((s) => s.id === id)
@@ -429,35 +414,12 @@ onUnmounted(() => cleanupDebounce())
             </tbody>
           </table>
         </div>
-        <div class="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-          <div class="text-sm text-slate-500">
-            <template v-if="showingRange.start">
-              Ko'rsatilmoqda {{ showingRange.start }}–{{ showingRange.end }} / {{ total }}
-            </template>
-            <template v-else>Jami: {{ total }}</template>
-          </div>
-          <div class="flex flex-wrap items-center gap-3">
-            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-              <span>Sahifa hajmi</span>
-              <select
-                v-model.number="limit"
-                class="rounded border border-gray-300 bg-white px-3 py-1 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-              >
-                <option :value="10">10</option>
-                <option :value="20">20</option>
-                <option :value="50">50</option>
-                <option :value="100">100</option>
-              </select>
-            </label>
-            <div class="flex items-center gap-2">
-              <BaseButton :disabled="page <= 1 || loading" label="Oldingi" @click="goToPrevPage" />
-              <span class="text-sm text-slate-600 dark:text-slate-300">
-                Sahifa {{ page }} / {{ totalPages }}
-              </span>
-              <BaseButton :disabled="page >= totalPages || loading" label="Keyingi" @click="goToNextPage" />
-            </div>
-          </div>
-        </div>
+        <PaginationControls
+          v-model:page="page"
+          v-model:limit="limit"
+          :total="total"
+          :disabled="loading"
+        />
       </CardBox>
 
       <CardBoxModal

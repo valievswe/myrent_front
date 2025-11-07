@@ -1,6 +1,6 @@
 <!-- eslint-disable no-empty -->
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
@@ -9,6 +9,7 @@ import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
+import PaginationControls from '@/components/PaginationControls.vue'
 import { listUsers } from '@/services/users'
 import { listSections, createSection, updateSection, deleteSection } from '@/services/sections'
 
@@ -21,6 +22,8 @@ const editingId = ref(null)
 const form = ref({ name: '', description: '', assigneeId: null })
 const users = ref([])
 const searchTerm = ref('')
+const page = ref(1)
+const limit = ref(10)
 
 async function fetchData() {
   loading.value = true
@@ -101,6 +104,35 @@ const filteredItems = computed(() => {
   })
 })
 
+const pagedItems = computed(() => {
+  const start = (page.value - 1) * limit.value
+  return filteredItems.value.slice(start, start + limit.value)
+})
+
+watch(
+  () => searchTerm.value,
+  () => {
+    page.value = 1
+  },
+)
+
+watch(
+  () => filteredItems.value.length,
+  () => {
+    const totalPages = Math.max(1, Math.ceil((filteredItems.value.length || 0) / limit.value))
+    if (page.value > totalPages) page.value = totalPages
+    if (page.value < 1) page.value = 1
+  },
+)
+
+watch(
+  () => limit.value,
+  () => {
+    const totalPages = Math.max(1, Math.ceil((filteredItems.value.length || 0) / limit.value))
+    if (page.value > totalPages) page.value = totalPages
+  },
+)
+
 onMounted(async () => {
   await fetchData()
   try {
@@ -149,7 +181,7 @@ onMounted(async () => {
                 </td>
               </tr>
               <tr
-                v-for="it in filteredItems"
+                v-for="it in pagedItems"
                 :key="it.id"
                 class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
               >
@@ -178,6 +210,12 @@ onMounted(async () => {
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          v-model:page="page"
+          v-model:limit="limit"
+          :total="filteredItems.length"
+          :disabled="loading"
+        />
       </CardBox>
 
       <CardBoxModal

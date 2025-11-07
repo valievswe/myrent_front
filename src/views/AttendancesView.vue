@@ -498,7 +498,14 @@ onMounted(async () => {
                       @change="() => toggleSelect(s)"
                     />
                   </td>
-                  <td class="px-4 py-2">#{{ s.id }} - {{ s.description || '' }}</td>
+                  <td class="px-4 py-2">
+                    <div class="font-semibold">
+                      {{ s.stallNumber || `Rasta #${s.id}` }}
+                    </div>
+                    <div class="text-xs text-gray-500 dark:text-gray-300">
+                      ID: #{{ s.id }} • {{ s.description || 'Izoh yo\'q' }}
+                    </div>
+                  </td>
                   <td class="px-4 py-2">{{ s.area }}</td>
                   <td class="px-4 py-2">{{ s.SaleType?.tax }}</td>
                   <td class="px-4 py-2">{{ computedFeeFor(s) }}</td>
