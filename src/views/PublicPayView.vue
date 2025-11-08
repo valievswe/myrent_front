@@ -7,11 +7,19 @@ import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import { searchPublicContracts, getPublicStall, initiatePublicContractPayment } from '@/services/publicPayment'
+import {
+  normalizeContracts,
+  normalizeStallResults,
+  isContractEntryPaid as isContractPaid,
+  isStallEntryPaid as isStallPaid,
+  resolvePeriodLabel,
+} from '@/utils/publicPayments'
+import { formatTashkentDate, formatTashkentDateTime, getTashkentTodayISO } from '@/utils/time'
 
 const route = useRoute()
 const router = useRouter()
 
-const today = new Date().toISOString().substring(0, 10)
+const today = getTashkentTodayISO()
 
 const mode = ref('store')
 
@@ -37,121 +45,14 @@ const stallError = ref('')
 const stallPaymentBusy = ref(null)
 const activeStallEntry = computed(() => stallResults.value[selectedStallIndex.value] || null)
 
-function normalizeContracts(payload) {
-  if (!payload) return []
-  const source = Array.isArray(payload)
-    ? payload
-    : Array.isArray(payload?.contracts)
-      ? payload.contracts
-      : Array.isArray(payload?.data)
-        ? payload.data
-        : payload.contract || payload.payment || payload.store || payload.owner
-          ? [payload]
-          : []
-
-  return source
-    .map((item) => {
-      const contract = item.contract || item
-      const owner = item.owner || contract.owner || null
-      const store = item.store || contract.store || null
-      const payment = item.payment || contract.payment || {}
-
-      const amount =
-        payment.amountDue ??
-        payment.amount ??
-        item.amountDue ??
-        item.amount ??
-        contract.amountDue ??
-        contract.shopMonthlyFee ??
-        (typeof contract.shopMonthlyFee === 'object' && contract.shopMonthlyFee !== null
-          ? contract.shopMonthlyFee.value ?? contract.shopMonthlyFee.toString?.()
-          : undefined)
-
-      const paymentUrl =
-        item.paymentUrl ||
-        payment.url ||
-        payment.paymentUrl ||
-        contract.paymentUrl ||
-        store?.click_payment_url ||
-        contract.store?.click_payment_url ||
-        null
-
-      return {
-        id: contract.id,
-        contract,
-        owner,
-        store,
-        payment: {
-          amountDue: amount !== undefined && amount !== null ? Number(amount) : null,
-          currency:
-            payment.currency ||
-            item.currency ||
-            (amount ? 'UZS' : null),
-          dueDate: payment.dueDate || item.dueDate || contract.dueDate || null,
-          label: payment.label || item.periodLabel || payment.periodLabel || null,
-          outstandingBalance:
-            payment.outstandingBalance ?? item.outstandingBalance ?? null,
-        },
-        paymentUrl,
-      }
-    })
-    .filter((entry) => entry.id)
+function periodLabel(entry) {
+  return entry?.payment?.label || resolvePeriodLabel(entry) || "Joriy oy"
 }
 
-function normalizeStallResults(payload) {
-  if (!payload) return []
-  const source = Array.isArray(payload?.data)
-    ? payload.data
-    : Array.isArray(payload)
-      ? payload
-      : payload?.stall
-        ? [payload]
-        : []
-
-  return source
-    .map((entry) => {
-      const stall = entry.stall || entry
-      const attendance = entry.attendance || stall.attendance || null
-      const payment = entry.payment || {}
-
-      const rawAmount =
-        payment.amountDue ??
-        payment.amount ??
-        attendance?.amount ??
-        stall.dailyFee ??
-        stall.amount ??
-        (typeof stall.dailyFee === 'object' && stall.dailyFee !== null
-          ? stall.dailyFee.value ?? stall.dailyFee.toString?.()
-          : undefined)
-
-      const normalizedAmount =
-        rawAmount !== undefined && rawAmount !== null && !Number.isNaN(Number(rawAmount))
-          ? Number(rawAmount)
-          : null
-
-      const paymentUrl =
-        entry.paymentUrl ||
-        payment.paymentUrl ||
-        payment.url ||
-        entry.payment_link ||
-        null
-
-      return {
-        id: stall.id || stall.stallId,
-        stall,
-        attendance,
-        payment: {
-          amountDue: normalizedAmount,
-          currency: payment.currency || (normalizedAmount ? 'UZS' : null),
-          date: payment.date || attendance?.date || stall.date || stallForm.date,
-          status: payment.status || attendance?.status || (attendance ? 'UNPAID' : 'NO_ATTENDANCE'),
-        },
-        paymentUrl,
-        paymentUrls: entry.paymentUrls || payment.urls || null,
-      }
-    })
-    .filter((entry) => entry.id)
+function paidTimestamp(entry) {
+  return entry?.payment?.paidAt || entry?.transaction?.createdAt || null
 }
+
 
 function formatCurrency(amount, currency = 'UZS') {
   if (amount === null || amount === undefined || Number.isNaN(Number(amount))) {
@@ -234,7 +135,7 @@ async function fetchStall(updateUrl = true) {
   stallError.value = ''
   try {
     const data = await getPublicStall(stall, { date: stallForm.date || undefined })
-    const normalized = normalizeStallResults(data)
+    const normalized = normalizeStallResults(data, { fallbackDate: stallForm.date })
     stallResults.value = normalized
     selectedStallIndex.value = normalized.length ? 0 : -1
     if (!normalized.length) {
@@ -261,6 +162,10 @@ async function fetchStall(updateUrl = true) {
 async function openContractPayment(entry) {
   const contractId = entry?.id
   if (!contractId) return
+  if (isContractPaid(entry)) {
+    storeError.value = "Bu shartnoma bo'yicha to'lov allaqachon tasdiqlangan."
+    return
+  }
 
   if (entry.paymentUrl) {
     openUrl(entry.paymentUrl)
@@ -284,7 +189,7 @@ async function openContractPayment(entry) {
 
 async function openStallPayment(entry = activeStallEntry.value) {
   if (!entry) return
-  if (entry.payment?.status === 'PAID') {
+  if (isStallPaid(entry)) {
     stallError.value = "Bu rasta bugun uchun allaqachon to'langan"
     return
   }
@@ -494,25 +399,62 @@ watch(
                   </div>
 
                   <div class="flex flex-col items-end gap-2 text-right">
-                    <div class="text-lg font-semibold text-info-600 dark:text-info-400">
+                    <span
+                      :class="[
+                        'rounded-full px-3 py-1 text-xs font-semibold',
+                        isContractPaid(entry)
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200',
+                      ]"
+                    >
+                      {{ isContractPaid(entry) ? "Bu oy to'langan" : "To'lov talab etiladi" }}
+                    </span>
+                    <div class="text-2xl font-semibold text-info-600 dark:text-info-300">
                       {{ formatCurrency(entry.payment.amountDue, entry.payment.currency || 'UZS') }}
                     </div>
-                    <p v-if="entry.payment.label" class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">
-                      {{ entry.payment.label }}
-                    </p>
-                    <p v-if="entry.payment.dueDate" class="text-xs text-slate-500 dark:text-slate-400">
-                      To'lov muddati: {{ entry.payment.dueDate }}
+                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">
+                      {{ periodLabel(entry) }}
                     </p>
                     <p v-if="entry.payment.outstandingBalance" class="text-xs text-red-500">
                       Qarzdorlik: {{ formatCurrency(entry.payment.outstandingBalance, entry.payment.currency || 'UZS') }}
                     </p>
+                    <p
+                      v-if="entry.payment.dueDate && !isContractPaid(entry)"
+                      class="text-xs text-amber-600 dark:text-amber-400"
+                    >
+                      To'lov muddati: {{ formatTashkentDate(entry.payment.dueDate) }} (Toshkent)
+                    </p>
+                    <p
+                      v-if="isContractPaid(entry) && paidTimestamp(entry)"
+                      class="text-xs text-emerald-600 dark:text-emerald-300"
+                    >
+                      Tasdiq: {{ formatTashkentDateTime(paidTimestamp(entry)) }} (Toshkent)
+                    </p>
                     <BaseButton
+                      v-if="!isContractPaid(entry)"
                       color="success"
                       :label="contractPaymentBusy === entry.id ? 'Havola tayyorlanmoqda...' : 'To\'lovni boshlash'"
                       :disabled="contractPaymentBusy === entry.id"
                       @click.stop.prevent="openContractPayment(entry)"
                     />
+                    <p v-else class="text-xs text-emerald-600 dark:text-emerald-300">
+                      To'lov qabul qilingan va tasdiqlangan.
+                    </p>
                   </div>
+                </div>
+                <div
+                  class="mt-4 rounded border px-4 py-3 text-sm"
+                  :class="isContractPaid(entry) ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/20' : 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/30'}"
+                >
+                  <p class="font-medium">
+                    {{ periodLabel(entry) }}
+                  </p>
+                  <p v-if="isContractPaid(entry)">
+                    Ushbu davr uchun to'lov qabul qilingan. Agar qo'shimcha kvitansiya kerak bo'lsa, ma'muriyatga murojaat qiling.
+                  </p>
+                  <p v-else>
+                    Onlayn to'lovni amalga oshirish uchun yuqoridagi tugmadan foydalaning yoki bozor kassasiga murojaat qiling.
+                  </p>
                 </div>
               </CardBox>
             </div>
@@ -574,38 +516,68 @@ watch(
                       Holati: {{ entry.payment?.status || 'NO_ATTENDANCE' }}
                     </p>
                     <p v-if="entry.attendance?.date" class="text-xs text-slate-400">
-                      Sana: {{ entry.attendance.date }}
+                      Sana: {{ formatTashkentDate(entry.attendance.date) || entry.attendance.date }}
                     </p>
                   </div>
 
                   <div class="flex flex-col items-end gap-2 text-right">
+                    <span
+                      :class="[
+                        'rounded-full px-3 py-1 text-xs font-semibold',
+                        isStallPaid(entry)
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200',
+                      ]"
+                    >
+                      {{ isStallPaid(entry) ? "To'lov tasdiqlangan" : "To'lov talab etiladi" }}
+                    </span>
                     <div class="text-lg font-semibold text-info-600 dark:text-info-400">
                       {{ formatCurrency(entry.payment?.amountDue, entry.payment?.currency || 'UZS') }}
                     </div>
                     <p v-if="entry.payment?.date" class="text-xs text-slate-500 dark:text-slate-400">
-                      To'lov kuni: {{ entry.payment.date }}
+                      To'lov kuni: {{ formatTashkentDate(entry.payment.date) || entry.payment.date }}
                     </p>
                     <p
-                      v-if="!entry.paymentUrl && entry.payment?.status !== 'PAID'"
+                      v-if="isStallPaid(entry) && paidTimestamp(entry)"
+                      class="text-xs text-emerald-600 dark:text-emerald-300"
+                    >
+                      Tasdiq: {{ formatTashkentDateTime(paidTimestamp(entry)) }} (Toshkent)
+                    </p>
+                    <p
+                      v-if="!entry.paymentUrl && !isStallPaid(entry)"
                       class="text-xs text-amber-600"
                     >
                       Online havola tayyor emas. Iltimos ma'muriyat bilan bog'laning.
                     </p>
                     <BaseButton
+                      v-if="!isStallPaid(entry)"
                       color="success"
                       :label="
                         stallPaymentBusy === entry.attendance?.id
                           ? 'Havola tayyorlanmoqda...'
-                          : entry.payment?.status === 'PAID'
-                            ? 'To\'langan'
-                            : entry.paymentUrl
-                              ? 'To\'lovni boshlash'
-                              : 'Havola talab qilish'
+                          : entry.paymentUrl
+                            ? 'To\'lovni boshlash'
+                            : 'Havola talab qilish'
                       "
-                      :disabled="entry.payment?.status === 'PAID' || stallPaymentBusy !== null"
+                      :disabled="stallPaymentBusy !== null"
                       @click.stop.prevent="openStallPayment(entry)"
                     />
+                    <p v-else class="text-xs text-emerald-600 dark:text-emerald-300">
+                      To'lov qabul qilingan.
+                    </p>
                   </div>
+                </div>
+                <div
+                  class="mt-4 rounded border px-4 py-3 text-sm"
+                  :class="isStallPaid(entry) ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/20' : 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/30'}"
+                >
+                  <p class="font-medium">Kunlik to'lov ma'lumotlari</p>
+                  <p v-if="isStallPaid(entry)">
+                    Ushbu sana uchun to'lov amalga oshirildi va tasdiqlandi. Qayta to'lov talab qilinmaydi.
+                  </p>
+                  <p v-else>
+                    Bugungi yig'imni onlayn to'lash uchun yuqoridagi tugmadan foydalaning yoki ma'muriyatga murojaat qiling.
+                  </p>
                 </div>
               </CardBox>
             </div>

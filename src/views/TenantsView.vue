@@ -11,6 +11,7 @@ import FilterToolbar from '@/components/FilterToolbar.vue'
 import { listOwners } from '@/services/owners'
 import { listSections } from '@/services/sections'
 import { isContractActive } from '@/utils/contracts'
+import { formatTashkentDate, parseTashkentDate, startOfTashkentDay } from '@/utils/time'
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -41,7 +42,7 @@ function statusOf(contract) {
   if (!contract) return 'none'
   if (isContractActive(contract)) {
     if (!contract.expiryDate) return 'active'
-    const diff = daysBetween(new Date(), new Date(contract.expiryDate))
+    const diff = daysBetween(startOfTashkentDay() || new Date(), parseTashkentDate(contract.expiryDate))
     return diff >= 0 && diff <= Number(expiringWindow.value || 0) ? 'expiring' : 'active'
   }
   if (contract.isActive === false) return 'inactive'
@@ -49,7 +50,11 @@ function statusOf(contract) {
 }
 
 function daysBetween(a, b) {
-  const ms = b.getTime() - a.getTime()
+  if (!a || !b) return NaN
+  const start = a instanceof Date ? a : parseTashkentDate(a)
+  const end = b instanceof Date ? b : parseTashkentDate(b)
+  if (!start || !end) return NaN
+  const ms = end.getTime() - start.getTime()
   return Math.floor(ms / (1000 * 60 * 60 * 24))
 }
 
@@ -64,7 +69,9 @@ const flattenedContracts = computed(() => {
         contract,
         store,
         status: statusOf(contract),
-        daysLeft: contract.expiryDate ? daysBetween(new Date(), new Date(contract.expiryDate)) : null,
+        daysLeft: contract.expiryDate
+          ? daysBetween(startOfTashkentDay() || new Date(), parseTashkentDate(contract.expiryDate))
+          : null,
         sectionName: sections.value.find((s) => s.id === store.sectionId)?.name || null,
       })
     }
@@ -254,8 +261,8 @@ onMounted(async () => {
                 <td class="px-4 py-2">
                   <div v-if="row.contract">
                     <div class="text-sm">
-                      {{ row.contract.issueDate ? row.contract.issueDate.substring(0, 10) : '-' }} —
-                      {{ row.contract.expiryDate ? row.contract.expiryDate.substring(0, 10) : '-' }}
+                      {{ formatTashkentDate(row.contract.issueDate) || '-' }} —
+                      {{ formatTashkentDate(row.contract.expiryDate) || '-' }}
                     </div>
                     <div v-if="row.daysLeft !== null" class="text-xs text-gray-500">
                       Qoldi: {{ row.daysLeft }} kun

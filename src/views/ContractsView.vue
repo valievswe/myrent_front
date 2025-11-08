@@ -12,6 +12,13 @@ import { listContracts, createContract, updateContract, deleteContract } from '@
 import { listOwners } from '@/services/owners'
 import { listStores } from '@/services/stores'
 import { downloadCSV } from '../utils/export'
+import {
+  formatTashkentDate,
+  formatTashkentDateISO,
+  getTashkentTodayISO,
+  parseTashkentDate,
+  startOfTashkentDay,
+} from '@/utils/time'
 
 const items = ref([])
 const loading = ref(false)
@@ -198,8 +205,8 @@ function openEdit(it) {
     storeId: it.storeId ?? null,
     shopMonthlyFee: it.shopMonthlyFee ?? null,
     certificateNumber: it.certificateNumber || '',
-    issueDate: it.issueDate ? it.issueDate.substring(0, 10) : '',
-    expiryDate: it.expiryDate ? it.expiryDate.substring(0, 10) : '',
+    issueDate: formatTashkentDateISO(it.issueDate) || '',
+    expiryDate: formatTashkentDateISO(it.expiryDate) || '',
     isActive: typeof it.isActive === 'boolean' ? it.isActive : true,
   }
   showForm.value = true
@@ -278,11 +285,11 @@ watch(statusFilter, async () => {
 function isStoreOccupied(s) {
   if (typeof s?.isOccupied === 'boolean') return s.isOccupied
   if (!s?.contracts || !Array.isArray(s.contracts)) return false
-  const today = new Date()
+  const today = startOfTashkentDay() || new Date()
   return s.contracts.some((c) => {
     const active = c.isActive !== false
-    const startOk = !c.issueDate || new Date(c.issueDate) <= today
-    const endOk = !c.expiryDate || new Date(c.expiryDate) >= today
+    const startOk = !c.issueDate || (parseTashkentDate(c.issueDate) || new Date(0)) <= today
+    const endOk = !c.expiryDate || (parseTashkentDate(c.expiryDate) || new Date(8640000000000000)) >= today
     return active && startOk && endOk
   })
 }
@@ -366,25 +373,29 @@ async function exportContractsCSV() {
       for (const c of arr) {
         const tx = c.transactions || []
         const paid = tx.filter((t) => t.status === 'PAID')
-        const last = paid.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
+        const last = paid.sort(
+          (a, b) =>
+            (parseTashkentDate(b.createdAt)?.getTime() || 0) -
+            (parseTashkentDate(a.createdAt)?.getTime() || 0),
+        )[0]
         const totalPaid = paid.reduce((sum, t) => sum + Number((t.amount && t.amount.toString()) || 0), 0)
         rows.push([
           c.id,
           c.owner?.fullName || c.ownerId,
           c.store?.storeNumber || c.storeId,
           c.shopMonthlyFee ?? '',
-          c.issueDate ? c.issueDate.substring(0, 10) : '',
-          c.expiryDate ? c.expiryDate.substring(0, 10) : '',
+          formatTashkentDateISO(c.issueDate) || '',
+          formatTashkentDateISO(c.expiryDate) || '',
           c.isActive ? 'Ha' : "Yo'q",
           tx.length,
-          last?.createdAt ? last.createdAt.substring(0, 10) : '',
+          last ? formatTashkentDateISO(last.createdAt) : '',
           totalPaid,
         ])
       }
       if (arr.length < 100) break
       p++
     }
-    downloadCSV(`contracts_${new Date().toISOString().substring(0,10)}.csv`, headers, rows)
+    downloadCSV(`contracts_${getTashkentTodayISO()}.csv`, headers, rows)
   } finally {
     loading.value = false
   }
@@ -406,7 +417,7 @@ async function exportContractTransactionsCSV() {
             c.id,
             c.owner?.fullName || c.ownerId,
             c.store?.storeNumber || c.storeId,
-            t.createdAt ? t.createdAt.substring(0, 10) : '',
+            formatTashkentDateISO(t.createdAt) || '',
             t.amount ?? '',
             t.status,
           ])
@@ -415,7 +426,7 @@ async function exportContractTransactionsCSV() {
       if (arr.length < 100) break
       p++
     }
-    downloadCSV(`contract_transactions_${new Date().toISOString().substring(0,10)}.csv`, headers, rows)
+    downloadCSV(`contract_transactions_${getTashkentTodayISO()}.csv`, headers, rows)
   } finally {
     loading.value = false
   }
@@ -494,9 +505,9 @@ async function exportContractTransactionsCSV() {
                     {{ it.store?.storeNumber || stores.find((s) => s.id === it.storeId)?.storeNumber || it.storeId }}
                   </td>
                   <td class="px-4 py-2">{{ it.shopMonthlyFee }}</td>
-                  <td class="px-4 py-2">{{ it.issueDate ? it.issueDate.substring(0, 10) : '-' }}</td>
+                  <td class="px-4 py-2">{{ formatTashkentDate(it.issueDate) || '-' }}</td>
                   <td class="px-4 py-2">
-                    {{ it.expiryDate ? it.expiryDate.substring(0, 10) : '-' }}
+                    {{ formatTashkentDate(it.expiryDate) || '-' }}
                   </td>
                   <td class="px-4 py-2">{{ it.isActive ? 'Faol' : 'Faol emas' }}</td>
                   <td class="px-4 py-2">
@@ -557,8 +568,17 @@ async function exportContractTransactionsCSV() {
                           </tr>
                         </thead>
                         <tbody>
-                          <tr v-for="t in (it.transactions || []).slice().sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt))" :key="t.id">
-                            <td class="px-2 py-1">{{ t.createdAt ? t.createdAt.substring(0,10) : '-' }}</td>
+                          <tr
+                            v-for="t in (it.transactions || [])
+                              .slice()
+                              .sort(
+                                (a, b) =>
+                                  (parseTashkentDate(b.createdAt)?.getTime() || 0) -
+                                  (parseTashkentDate(a.createdAt)?.getTime() || 0),
+                              )"
+                            :key="t.id"
+                          >
+                            <td class="px-2 py-1">{{ formatTashkentDate(t.createdAt) || '-' }}</td>
                             <td class="px-2 py-1">{{ t.amount }}</td>
                             <td class="px-2 py-1">
                               <span :class="t.status === 'PAID' ? 'text-green-600' : 'text-red-600'">{{ t.status }}</span>

@@ -9,6 +9,7 @@ import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
 import { listContracts } from '@/services/contracts'
+import { formatTashkentDate, parseTashkentDate, startOfTashkentDay } from '@/utils/time'
 
 const items = ref([])
 const loading = ref(false)
@@ -37,14 +38,14 @@ const pageStats = computed(() => {
 })
 
 function formatDate(value) {
-  if (!value) return '-'
-  return String(value).substring(0, 10)
+  return formatTashkentDate(value) || '-'
 }
 
 function statusLabel(item) {
   if (item.isActive === false) return 'Arxiv'
-  const today = new Date()
-  if (item.expiryDate && new Date(item.expiryDate) < today) return 'Muddat tugagan'
+  const today = startOfTashkentDay() || new Date()
+  const expiry = parseTashkentDate(item.expiryDate)
+  if (expiry && expiry < today) return 'Muddat tugagan'
   return 'Faol'
 }
 

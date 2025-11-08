@@ -1,3 +1,5 @@
+import { parseTashkentDate, startOfTashkentDay } from './time'
+
 function toNumber(value) {
   if (value === null || value === undefined) return 0
   if (typeof value === 'number') return Number.isNaN(value) ? 0 : value
@@ -14,12 +16,14 @@ function toNumber(value) {
 }
 
 function firstDayOfMonth(date) {
+  if (!date || Number.isNaN(date.getTime())) return null
   return new Date(date.getFullYear(), date.getMonth(), 1)
 }
 
 function monthsBetweenInclusive(startDate, endDate) {
   const start = firstDayOfMonth(startDate)
   const end = firstDayOfMonth(endDate)
+  if (!start || !end) return 0
   const diff =
     (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth())
   return diff < 0 ? 0 : diff + 1
@@ -32,20 +36,20 @@ export function summarizeContractDebts(contracts = [], { asOf = new Date() } = {
   let contractsWithDebt = 0
   const breakdown = []
 
-  const asOfDate = new Date(asOf)
+  const asOfDate = startOfTashkentDay(asOf) || parseTashkentDate(asOf) || new Date()
 
   for (const contract of contracts) {
     const fee = toNumber(contract?.shopMonthlyFee)
     if (!fee) continue
 
-    const issue = contract?.issueDate ? new Date(contract.issueDate) : null
-    const created = contract?.createdAt ? new Date(contract.createdAt) : null
+    const issue = parseTashkentDate(contract?.issueDate)
+    const created = parseTashkentDate(contract?.createdAt)
     const startDate = issue && !Number.isNaN(issue) ? issue : created && !Number.isNaN(created) ? created : null
     if (!startDate || Number.isNaN(startDate)) continue
 
     let endDate = asOfDate
     if (contract?.expiryDate) {
-      const expiry = new Date(contract.expiryDate)
+      const expiry = parseTashkentDate(contract.expiryDate)
       if (!Number.isNaN(expiry) && expiry < endDate) endDate = expiry
     }
     if (endDate < startDate) continue

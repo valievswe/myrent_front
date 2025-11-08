@@ -10,6 +10,7 @@ import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
 import { listOwners, createOwner, updateOwner, deleteOwner } from '@/services/owners'
+import { parseTashkentDate, startOfTashkentDay } from '@/utils/time'
 
 const items = ref([])
 const loading = ref(false)
@@ -169,7 +170,15 @@ watch([page, limit], () => {
                 <td class="px-4 py-2">
                   <span v-if="(it.contracts || []).length">
                     {{ (it.contracts
-                      .filter(c => c.isActive !== false && (!c.issueDate || new Date(c.issueDate) <= new Date()) && (!c.expiryDate || new Date(c.expiryDate) >= new Date()))
+                      .filter((c) => {
+                        const today = startOfTashkentDay() || new Date()
+                        const startOk =
+                          !c.issueDate || (parseTashkentDate(c.issueDate) || new Date(0)) <= today
+                        const endOk =
+                          !c.expiryDate ||
+                          (parseTashkentDate(c.expiryDate) || new Date(8640000000000000)) >= today
+                        return c.isActive !== false && startOk && endOk
+                      })
                       .map(c => c.store?.storeNumber || `#${c.storeId}`)).join(', ') || '-' }}
                   </span>
                   <span v-else>-</span>

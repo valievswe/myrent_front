@@ -20,6 +20,12 @@ import { listStalls } from '@/services/stalls'
 import { listSections } from '@/services/sections'
 import { listSaleTypes } from '@/services/saleTypes'
 import { downloadCSV } from '../utils/export'
+import {
+  formatTashkentDate,
+  formatTashkentDateISO,
+  getTashkentTodayISO,
+  parseTashkentDate,
+} from '@/utils/time'
 
 const items = ref([])
 const loading = ref(false)
@@ -30,7 +36,7 @@ const total = ref(0)
 
 const showForm = ref(false)
 const editingId = ref(null)
-const form = ref({ date: new Date().toISOString().substring(0, 10), stallId: null })
+const form = ref({ date: getTashkentTodayISO(), stallId: null })
 const stalls = ref([])
 const stallSearch = ref('')
 const stallOptions = ref([])
@@ -70,7 +76,7 @@ onMounted(async () => {
 
 function openCreate() {
   editingId.value = null
-  form.value = { date: new Date().toISOString().substring(0, 10), stallId: null }
+  form.value = { date: getTashkentTodayISO(), stallId: null }
   stallSearch.value = ''
   stallOptions.value = []
   selectedStallObj.value = null
@@ -79,7 +85,7 @@ function openCreate() {
 
 function openEdit(it) {
   editingId.value = it.id
-  form.value = { date: it.date?.substring(0, 10) || '', stallId: it.stallId }
+  form.value = { date: formatTashkentDateISO(it.date) || '', stallId: it.stallId }
   stallSearch.value = `#${it.stallId}`
   stallOptions.value = []
   selectedStallObj.value = stalls.value.find((s) => s.id === Number(it.stallId)) || null
@@ -169,7 +175,7 @@ function clearStall() {
 }
 
 // --- Bulk by date: robust daily workflow ---
-const bulkDate = ref(new Date().toISOString().substring(0, 10))
+const bulkDate = ref(getTashkentTodayISO())
 const stallSearchBulk = ref('')
 const stallsBulk = ref([])
 const stallPage = ref(1)
@@ -315,7 +321,12 @@ async function loadHistory(stallId) {
     const res = await listAttendances({ stallId, page: 1, limit: 30 })
     historyByStall.value = {
       ...historyByStall.value,
-      [stallId]: (res.data || []).sort((a, b) => new Date(b.date) - new Date(a.date)),
+      [stallId]:
+        (res.data || []).sort(
+          (a, b) =>
+            (parseTashkentDate(b.date)?.getTime() || 0) -
+            (parseTashkentDate(a.date)?.getTime() || 0),
+        ),
     }
   } catch (e) {
     console.error(e)
@@ -366,7 +377,7 @@ async function exportAttendancesCSV() {
       const arr = res.data || []
       for (const a of arr) {
         rows.push([
-          a.date ? a.date.substring(0, 10) : '',
+          formatTashkentDateISO(a.date) || '',
           a.stallId,
           a.Stall?.description || '',
           a.Stall?.area ?? '',
@@ -622,7 +633,7 @@ onMounted(async () => {
                         </thead>
                         <tbody>
                           <tr v-for="a in historyByStall[s.id] || []" :key="a.id">
-                            <td class="px-2 py-1">{{ a.date ? a.date.substring(0, 10) : '-' }}</td>
+                            <td class="px-2 py-1">{{ formatTashkentDate(a.date) || '-' }}</td>
                             <td class="px-2 py-1">{{ a.amount }}</td>
                             <td class="px-2 py-1">
                               <span

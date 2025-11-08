@@ -8,13 +8,18 @@ import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import FilterToolbar from '@/components/FilterToolbar.vue'
-import CardBoxModal from '@/components/CardBoxModal.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
-import { listTransactions, updateTransaction, deleteTransaction } from '@/services/transactions'
+import { listTransactions } from '@/services/transactions'
 import { listContracts } from '@/services/contracts'
 import { listAttendances } from '@/services/attendances'
 import { summarizeContractDebts, summarizeAttendanceDebts } from '@/utils/debt'
 import { downloadCSV } from '../utils/export'
+import {
+  formatTashkentDate,
+  formatTashkentDateTime,
+  getTashkentTodayISO,
+  parseTashkentDate,
+} from '@/utils/time'
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -31,17 +36,6 @@ const page = ref(1)
 const limit = ref(15)
 const total = ref(0)
 
-const editingId = ref(null)
-const showForm = ref(false)
-const form = ref({
-  transactionId: '',
-  amount: '',
-  status: 'PENDING',
-  paymentMethod: 'CASH',
-  contractId: null,
-  attendanceId: null,
-})
-
 const expandedId = ref(null)
 
 const statusOptions = ['PENDING', 'PAID', 'FAILED', 'CANCELLED']
@@ -49,13 +43,18 @@ const methodOptions = ['CASH', 'CLICK', 'PAYME']
 
 function matchesDateRange(item) {
   if (!dateFrom.value && !dateTo.value) return true
-  const created = item.createdAt ? new Date(item.createdAt) : null
+  const created = parseTashkentDate(item.createdAt)
   if (!created) return false
-  if (dateFrom.value && created < new Date(dateFrom.value)) return false
+  if (dateFrom.value) {
+    const start = parseTashkentDate(dateFrom.value)
+    if (start && created < start) return false
+  }
   if (dateTo.value) {
-    const end = new Date(dateTo.value)
-    end.setHours(23, 59, 59, 999)
-    if (created > end) return false
+    const end = parseTashkentDate(dateTo.value)
+    if (end) {
+      end.setHours(23, 59, 59, 999)
+      if (created > end) return false
+    }
   }
   return true
 }
@@ -153,58 +152,6 @@ function resetFilters() {
   fetchData()
 }
 
-function openEdit(item) {
-  editingId.value = item.id
-  form.value = {
-    transactionId: item.transactionId || '',
-    amount: Number(item.amount || 0),
-    status: item.status || 'PENDING',
-    paymentMethod: item.paymentMethod || 'CASH',
-    contractId: item.contractId ?? null,
-    attendanceId: item.attendanceId ?? null,
-  }
-  showForm.value = true
-}
-
-async function submitForm() {
-  if (!editingId.value) return
-  loading.value = true
-  errorMsg.value = ''
-  try {
-    const payload = {
-      transactionId: form.value.transactionId || undefined,
-      amount: form.value.amount ? Number(form.value.amount) : undefined,
-      status: form.value.status,
-      paymentMethod: form.value.paymentMethod,
-      contractId: form.value.contractId || null,
-      attendanceId: form.value.attendanceId || null,
-    }
-    await updateTransaction(editingId.value, payload)
-    showForm.value = false
-    await fetchData()
-    await refreshDebt()
-  } catch (e) {
-    errorMsg.value = e?.response?.data?.message || 'Saqlashda xatolik'
-  } finally {
-    loading.value = false
-  }
-}
-
-async function removeItem(it) {
-  if (!confirm("Haqiqatan o'chirmoqchimisiz?")) return
-  loading.value = true
-  errorMsg.value = ''
-  try {
-    await deleteTransaction(it.id)
-    await fetchData()
-    await refreshDebt()
-  } catch (e) {
-    errorMsg.value = e?.response?.data?.message || "O'chirishda xatolik"
-  } finally {
-    loading.value = false
-  }
-}
-
 async function exportCSV() {
   loading.value = true
   try {
@@ -231,13 +178,13 @@ async function exportCSV() {
           it.status,
           it.paymentMethod,
           source,
-          it.createdAt ? it.createdAt.substring(0, 19).replace('T', ' ') : '',
+          formatTashkentDateTime(it.createdAt, { withSeconds: true }) || '',
         ])
       }
       if (arr.length < 100) break
       p++
     }
-    downloadCSV(`transactions_${new Date().toISOString().substring(0, 10)}.csv`, headers, rows)
+    downloadCSV(`transactions_${getTashkentTodayISO()}.csv`, headers, rows)
   } finally {
     loading.value = false
   }
@@ -549,7 +496,7 @@ onMounted(async () => {
                     <div v-else class="text-xs text-gray-500">-</div>
                   </td>
                   <td class="px-4 py-2">
-                    {{ it.createdAt ? it.createdAt.substring(0, 19).replace('T', ' ') : '-' }}
+                    {{ formatTashkentDateTime(it.createdAt, { withSeconds: true }) || '-' }}
                   </td>
                   <td class="px-4 py-2">
                     <div class="flex flex-wrap justify-end gap-2">
@@ -560,14 +507,6 @@ onMounted(async () => {
                         label="Batafsil"
                         @click="toggleExpand(it.id)"
                       />
-                      <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
-                      <BaseButton
-                        color="danger"
-                        small
-                        outline
-                        label="O'chirish"
-                        @click="removeItem(it)"
-                      />
                     </div>
                   </td>
                 </tr>
@@ -576,11 +515,11 @@ onMounted(async () => {
                     <div class="flex flex-wrap gap-6">
                       <div>
                         <div class="text-xs font-semibold uppercase text-gray-500">Yaratilgan</div>
-                        <div>{{ it.createdAt }}</div>
+                        <div>{{ formatTashkentDateTime(it.createdAt, { withSeconds: true }) || '-' }}</div>
                       </div>
                       <div>
                         <div class="text-xs font-semibold uppercase text-gray-500">Yangilangan</div>
-                        <div>{{ it.updatedAt }}</div>
+                        <div>{{ formatTashkentDateTime(it.updatedAt, { withSeconds: true }) || '-' }}</div>
                       </div>
                       <div v-if="it.contract">
                         <div class="text-xs font-semibold uppercase text-gray-500">Shartnoma</div>
@@ -593,7 +532,7 @@ onMounted(async () => {
                         <div class="text-xs font-semibold uppercase text-gray-500">Attendance</div>
                         <div>
                           Stall #{{ it.attendance.stallId }} •
-                          {{ it.attendance.date ? it.attendance.date.substring(0, 10) : '' }}
+                          {{ formatTashkentDate(it.attendance.date) || '' }}
                         </div>
                       </div>
                     </div>
@@ -612,49 +551,6 @@ onMounted(async () => {
         />
       </CardBox>
 
-      <CardBoxModal
-        v-model="showForm"
-        has-cancel
-        :close-on-confirm="false"
-        :confirm-disabled="loading"
-        button="success"
-        :button-label="loading ? 'Saqlanmoqda...' : 'Saqlash'"
-        :title="`Tranzaksiya #${editingId} tahrirlash`"
-        @confirm="submitForm"
-        @cancel="showForm = false"
-      >
-        <form class="grid gap-4 md:grid-cols-2" @submit.prevent="submitForm">
-          <FormField label="Transaction ID">
-            <FormControl v-model="form.transactionId" placeholder="T2001..." />
-          </FormField>
-          <FormField label="Summasi">
-            <FormControl v-model.number="form.amount" type="number" min="0" step="0.01" />
-          </FormField>
-          <FormField label="Holati">
-            <select
-              v-model="form.status"
-              class="block w-full rounded border border-gray-300 bg-white p-2 text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-            >
-              <option v-for="opt in statusOptions" :key="opt" :value="opt">{{ opt }}</option>
-            </select>
-          </FormField>
-          <FormField label="To'lov usuli">
-            <select
-              v-model="form.paymentMethod"
-              class="block w-full rounded border border-gray-300 bg-white p-2 text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-            >
-              <option v-for="opt in methodOptions" :key="opt" :value="opt">{{ opt }}</option>
-            </select>
-          </FormField>
-          <FormField label="Contract ID (ixtiyoriy)">
-            <FormControl v-model.number="form.contractId" type="number" min="1" />
-          </FormField>
-          <FormField label="Attendance ID (ixtiyoriy)">
-            <FormControl v-model.number="form.attendanceId" type="number" min="1" />
-          </FormField>
-          <button type="submit" class="hidden" />
-        </form>
-      </CardBoxModal>
     </SectionMain>
   </LayoutAuthenticated>
 </template>

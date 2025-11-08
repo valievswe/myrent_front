@@ -13,6 +13,12 @@ const routes = [
     component: () => import('@/views/PublicPayView.vue'),
   },
   {
+    meta: { title: "To'lov tasdig'i", public: true },
+    path: '/pay/confirmation',
+    name: 'public-pay-confirmation',
+    component: () => import('@/views/PublicPayConfirmationView.vue'),
+  },
+  {
     meta: { title: 'Boshqaruv paneli' },
     path: '/dashboard',
     name: 'dashboard',

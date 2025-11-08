@@ -13,6 +13,7 @@ import { listStalls } from '@/services/stalls'
 import { listAttendances } from '@/services/attendances'
 import { listContracts } from '@/services/contracts'
 import PaginationControls from '@/components/PaginationControls.vue'
+import { formatTashkentDate, getTashkentTodayISO, parseTashkentDate, startOfTashkentDay } from '@/utils/time'
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -31,7 +32,7 @@ const typeOptions = [
   { value: 'stalls', label: 'Rastalar' },
 ]
 const selectedSectionId = ref(null)
-const date = ref(new Date().toISOString().substring(0, 10))
+const date = ref(getTashkentTodayISO())
 const search = ref('')
 const zoom = ref(1)
 const zoomPercent = computed(() => Math.round(zoom.value * 100))
@@ -44,11 +45,12 @@ function isStoreOccupied(store) {
   if (typeof store?.isOccupied === 'boolean') return store.isOccupied
   const cs = store?.contracts
   if (!Array.isArray(cs)) return false
-  const today = new Date()
+  const today = startOfTashkentDay() || new Date()
   return cs.some((c) => {
     const active = c.isActive !== false
-    const startOk = !c.issueDate || new Date(c.issueDate) <= today
-    const endOk = !c.expiryDate || new Date(c.expiryDate) >= today
+    const startOk = !c.issueDate || (parseTashkentDate(c.issueDate) || new Date(0)) <= today
+    const endOk =
+      !c.expiryDate || (parseTashkentDate(c.expiryDate) || new Date(8640000000000000)) >= today
     return active && startOk && endOk
   })
 }

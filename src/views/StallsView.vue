@@ -15,6 +15,7 @@ import { listAttendances } from '@/services/attendances'
 import { listSaleTypes } from '@/services/saleTypes'
 import { listSections } from '@/services/sections'
 import { downloadCSV } from '@/utils/export'
+import { formatTashkentDate } from '@/utils/time'
 
 const items = ref([])
 const loading = ref(false)
@@ -401,7 +402,7 @@ onUnmounted(() => cleanupDebounce())
                         </thead>
                         <tbody>
                           <tr v-for="a in attendanceMap[it.id]" :key="a.id">
-                            <td class="px-2 py-1">{{ a.date?.substring(0, 10) }}</td>
+                            <td class="px-2 py-1">{{ formatTashkentDate(a.date) || '-' }}</td>
                             <td class="px-2 py-1">{{ a.amount }}</td>
                             <td class="px-2 py-1">{{ a.status }}</td>
                           </tr>

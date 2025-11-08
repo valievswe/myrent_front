@@ -13,6 +13,13 @@ import { listAttendances, getAttendancePayUrl } from '@/services/attendances'
 import { listSections } from '@/services/sections'
 import { downloadCSV } from '../utils/export'
 import { isContractActive } from '@/utils/contracts'
+import {
+  formatTashkentDate,
+  formatTashkentDateISO,
+  getTashkentTodayISO,
+  parseTashkentDate,
+  startOfTashkentDay,
+} from '@/utils/time'
 
 const contractLoading = ref(false)
 const attendanceLoading = ref(false)
@@ -26,7 +33,7 @@ const contractLimit = ref(20)
 const contractSearch = ref('')
 const contractStatus = ref('active')
 
-const attendanceDate = ref(new Date().toISOString().substring(0, 10))
+const attendanceDate = ref(getTashkentTodayISO())
 const attendanceStatus = ref('pending')
 const attendanceItems = ref([])
 const sections = ref([])
@@ -34,19 +41,41 @@ const sections = ref([])
 function contractPaymentStatus(contract) {
   const tx = (contract.transactions || [])
     .slice()
-    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .sort(
+      (a, b) =>
+        (parseTashkentDate(b.createdAt)?.getTime() || 0) -
+        (parseTashkentDate(a.createdAt)?.getTime() || 0),
+    )
   const lastPaid = tx.find((t) => t.status === 'PAID')
   const pending = tx.find((t) => t.status === 'PENDING')
 
   if (pending) return 'pending'
   if (lastPaid) {
-    const lastDate = new Date(lastPaid.createdAt || 0)
-    const now = new Date()
+    const lastDate = parseTashkentDate(lastPaid.createdAt)
+    const now = startOfTashkentDay() || new Date()
     const sameMonth =
-      lastDate.getFullYear() === now.getFullYear() && lastDate.getMonth() === now.getMonth()
+      lastDate &&
+      now &&
+      lastDate.getFullYear() === now.getFullYear() &&
+        lastDate.getMonth() === now.getMonth()
     return sameMonth ? 'paid' : 'overdue'
   }
   return isContractActive(contract) ? 'overdue' : 'inactive'
+}
+
+function lastPaidTransaction(contract) {
+  return (contract.transactions || [])
+    .filter((t) => t.status === 'PAID')
+    .sort(
+      (a, b) =>
+        (parseTashkentDate(b.createdAt)?.getTime() || 0) -
+        (parseTashkentDate(a.createdAt)?.getTime() || 0),
+    )[0]
+}
+
+function lastPaidDate(contract) {
+  const tx = lastPaidTransaction(contract)
+  return tx ? formatTashkentDate(tx.createdAt) : '-'
 }
 
 const filteredContracts = computed(() => {
@@ -159,19 +188,17 @@ async function exportContractsCSV() {
     const headers = ['ID', 'Ega', "Do'kon", 'Oylik fee', 'Holati', "Oxirgi to'lov"]
     const rows = filteredContracts.value.map((c) => {
       const status = contractPaymentStatus(c)
-      const lastPaid = (c.transactions || [])
-        .filter((t) => t.status === 'PAID')
-        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0]
+      const lastPaid = lastPaidTransaction(c)
       return [
         c.id,
         c.owner?.fullName || c.ownerId,
         c.store?.storeNumber || c.storeId,
         c.shopMonthlyFee ?? '',
         status,
-        lastPaid?.createdAt ? lastPaid.createdAt.substring(0, 10) : '',
+        lastPaid ? formatTashkentDateISO(lastPaid.createdAt) : '',
       ]
     })
-    downloadCSV(`contract_payments_${new Date().toISOString().substring(0, 10)}.csv`, headers, rows)
+    downloadCSV(`contract_payments_${getTashkentTodayISO()}.csv`, headers, rows)
   } finally {
     contractLoading.value = false
   }
@@ -183,7 +210,7 @@ async function exportAttendancesCSV() {
     const headers = ['ID', 'Sana', 'Rasta', 'Holati', 'Summasi']
     const rows = filteredAttendances.value.map((a) => [
       a.id,
-      a.date ? a.date.substring(0, 10) : '',
+      formatTashkentDateISO(a.date) || '',
       a.stallId,
       a.status,
       a.amount ?? '',
@@ -364,12 +391,7 @@ onMounted(async () => {
                   </span>
                 </td>
                 <td class="px-4 py-2">
-                  {{
-                    (c.transactions || [])
-                      .filter((t) => t.status === 'PAID')
-                      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0]
-                      ?.createdAt?.substring(0, 10) || '-'
-                  }}
+                  {{ lastPaidDate(c) }}
                 </td>
               </tr>
             </tbody>
@@ -470,7 +492,7 @@ onMounted(async () => {
                     {{ a.status }}
                   </span>
                 </td>
-                <td class="px-4 py-2">{{ a.date ? a.date.substring(0, 10) : '-' }}</td>
+                <td class="px-4 py-2">{{ formatTashkentDate(a.date) || '-' }}</td>
                 <td class="px-4 py-2 text-right">
                   <BaseButton
                     v-if="a.status === 'UNPAID'"

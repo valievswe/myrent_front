@@ -11,6 +11,7 @@ import FilterToolbar from '@/components/FilterToolbar.vue'
 import { listStores } from '@/services/stores'
 import { listSections } from '@/services/sections'
 import { isContractActive } from '@/utils/contracts'
+import { formatTashkentDate, parseTashkentDate, startOfTashkentDay } from '@/utils/time'
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -35,8 +36,8 @@ function latestContract(store) {
     .slice()
     .sort(
       (a, b) =>
-        new Date(b.issueDate || b.createdAt || 0).getTime() -
-        new Date(a.issueDate || a.createdAt || 0).getTime(),
+        (parseTashkentDate(b.issueDate || b.createdAt)?.getTime() || 0) -
+        (parseTashkentDate(a.issueDate || a.createdAt)?.getTime() || 0),
     )[0] || null
 }
 
@@ -48,9 +49,9 @@ function contractStatus(contract) {
     return isContractActive(contract) ? 'occupied' : 'free'
   }
 
-  const diff = Math.floor(
-    (new Date(contract.expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24),
-  )
+  const expiry = parseTashkentDate(contract.expiryDate)
+  const now = startOfTashkentDay() || new Date()
+  const diff = expiry ? Math.floor((expiry.getTime() - now.getTime()) / 86400000) : NaN
   if (diff < 0) return 'expired'
   if (diff <= 14) return 'expiring'
 
@@ -275,8 +276,8 @@ onMounted(async () => {
                     {{ latestContract(store)?.owner?.phoneNumber || '' }}
                   </div>
                   <div class="mt-2 text-xs text-gray-500">
-                    {{ latestContract(store)?.issueDate?.substring(0, 10) || '-' }} —
-                    {{ latestContract(store)?.expiryDate?.substring(0, 10) || '-' }}
+                    {{ formatTashkentDate(latestContract(store)?.issueDate) || '-' }} —
+                    {{ formatTashkentDate(latestContract(store)?.expiryDate) || '-' }}
                   </div>
                   <div class="mt-1 text-xs text-gray-500">
                     Oylik: {{ latestContract(store)?.shopMonthlyFee ?? '—' }}
