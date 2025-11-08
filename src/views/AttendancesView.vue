@@ -131,11 +131,14 @@ async function removeItem(it) {
   }
 }
 
+function resolvePaymentType() {
+  if (typeof window === 'undefined') return 'click'
+  return window.location.hostname === 'myrent.uz' ? 'payme' : 'click'
+}
+
 async function pay(it) {
   try {
-    const hostname = window.location.hostname;
-    const paymentType = hostname === "myrent.uz" ? "payme" : "click";
-
+    const paymentType = resolvePaymentType()
     const { url } = await getAttendancePayUrl(it.id, paymentType)
 
     if (url) {
@@ -147,6 +150,60 @@ async function pay(it) {
     console.error(e)
     alert('To‘lov havolasini olishda xatolik yuz berdi')
   }
+}
+
+const qrModalVisible = ref(false)
+const qrModalLoading = ref(false)
+const qrModalError = ref('')
+const qrModalData = ref({
+  url: '',
+  qrSrc: '',
+  stallLabel: '',
+  date: '',
+  provider: '',
+  amount: null,
+})
+
+function buildQrImage(url) {
+  if (!url) return ''
+  const params = new URLSearchParams({
+    text: url,
+    size: '260',
+    margin: '0',
+  })
+  return `https://quickchart.io/qr?${params.toString()}`
+}
+
+async function showQr(attendance) {
+  if (!attendance) return
+  qrModalVisible.value = true
+  qrModalLoading.value = true
+  qrModalError.value = ''
+  qrModalData.value = {
+    url: '',
+    qrSrc: '',
+    stallLabel: attendance.Stall?.stallNumber || `Rasta #${attendance.stallId}`,
+    date: attendance.date || bulkDate.value,
+    provider: '',
+    amount: attendance.amount ?? null,
+  }
+  try {
+    const paymentType = resolvePaymentType()
+    const { url, provider } = await getAttendancePayUrl(attendance.id, paymentType)
+    if (!url) throw new Error("To'lov havolasi topilmadi")
+    qrModalData.value.url = url
+    qrModalData.value.provider = (provider || paymentType || '').toUpperCase()
+    qrModalData.value.qrSrc = buildQrImage(url)
+  } catch (e) {
+    qrModalError.value = e?.response?.data?.message || e.message || 'QR kodni yaratib bo\'lmadi'
+  } finally {
+    qrModalLoading.value = false
+  }
+}
+
+function openQrPaymentLink() {
+  if (!qrModalData.value.url || typeof window === 'undefined') return
+  window.open(qrModalData.value.url, '_blank', 'noopener')
 }
 
 let stallDebounceId
@@ -586,6 +643,14 @@ onMounted(async () => {
                         @click="pay(attendanceByStall[s.id])"
                       />
                       <BaseButton
+                        color="info"
+                        small
+                        outline
+                        label="QR kod"
+                        class="ml-2"
+                        @click="showQr(attendanceByStall[s.id])"
+                      />
+                      <BaseButton
                         color="danger"
                         small
                         outline
@@ -729,6 +794,49 @@ onMounted(async () => {
           </FormField>
           <button type="submit" class="hidden" />
         </form>
+      </CardBoxModal>
+
+      <CardBoxModal
+        v-model="qrModalVisible"
+        has-cancel
+        :close-on-confirm="false"
+        :confirm-disabled="qrModalLoading"
+        button="info"
+        :button-label="qrModalData.url ? 'Havolani ochish' : 'Yopish'"
+        title="To'lov QR kodi"
+        @confirm="qrModalData.url ? openQrPaymentLink() : (qrModalVisible = false)"
+        @cancel="qrModalVisible = false"
+      >
+        <div class="space-y-4">
+          <div v-if="qrModalLoading" class="py-8 text-center text-sm text-gray-500">
+            QR kod tayyorlanmoqda...
+          </div>
+          <div v-else-if="qrModalError" class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {{ qrModalError }}
+          </div>
+          <div v-else-if="qrModalData.qrSrc" class="flex flex-col items-center gap-3">
+            <img
+              :src="qrModalData.qrSrc"
+              alt="To'lov QR kodi"
+              class="h-56 w-56 rounded border border-gray-200 bg-white p-3 shadow"
+            />
+            <div class="text-center text-sm text-gray-600 dark:text-gray-300">
+              <div class="font-semibold text-gray-800 dark:text-gray-100">
+                {{ qrModalData.stallLabel }}
+              </div>
+              <div v-if="qrModalData.date">Sana: {{ formatTashkentDate(qrModalData.date) }}</div>
+              <div v-if="qrModalData.amount">Summasi: {{ qrModalData.amount }}</div>
+              <div v-if="qrModalData.provider">Provayder: {{ qrModalData.provider }}</div>
+            </div>
+            <BaseButton
+              color="success"
+              :disabled="!qrModalData.url"
+              label="To'lov havolasini ochish"
+              @click="openQrPaymentLink"
+            />
+          </div>
+          <div v-else class="text-center text-sm text-gray-500">QR kod uchun havola topilmadi.</div>
+        </div>
       </CardBoxModal>
     </SectionMain>
   </LayoutAuthenticated>
