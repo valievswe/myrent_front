@@ -125,8 +125,13 @@ watch(
             Tasdiqlash uchun ma'lumot topilmadi.
           </div>
           <div v-else class="space-y-6">
-            <div class="rounded border px-4 py-3"
-              :class="isPaid ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/20' : 'border-amber-200 bg-amber-50 dark:border-amber-900/30 dark:bg-amber-950/20'}"
+            <div
+              class="rounded border px-4 py-3"
+              :class="
+                isPaid
+                  ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/20'
+                  : 'border-amber-200 bg-amber-50 dark:border-amber-900/30 dark:bg-amber-950/20'
+              "
             >
               <p class="text-sm font-semibold uppercase tracking-wide">
                 {{ isPaid ? "To'lov tasdiqlandi" : "To'lov kutilmoqda" }}
