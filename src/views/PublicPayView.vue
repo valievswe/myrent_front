@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import LayoutGuest from '@/layouts/LayoutGuest.vue'
 import CardBox from '@/components/CardBox.vue'
@@ -30,10 +30,12 @@ const stallForm = reactive({
   stall: '',
   date: today,
 })
-const stallResult = ref(null)
+const stallResults = ref([])
+const selectedStallIndex = ref(-1)
 const stallLoading = ref(false)
 const stallError = ref('')
-const stallPaymentBusy = ref(false)
+const stallPaymentBusy = ref(null)
+const activeStallEntry = computed(() => stallResults.value[selectedStallIndex.value] || null)
 
 function normalizeContracts(payload) {
   if (!payload) return []
@@ -96,44 +98,59 @@ function normalizeContracts(payload) {
     .filter((entry) => entry.id)
 }
 
-function normalizeStall(payload) {
-  if (!payload) return null
-  const stall = payload.stall || payload
-  const payment = payload.payment || {}
-  const attendance = payload.attendance || null
+function normalizeStallResults(payload) {
+  if (!payload) return []
+  const source = Array.isArray(payload?.data)
+    ? payload.data
+    : Array.isArray(payload)
+      ? payload
+      : payload?.stall
+        ? [payload]
+        : []
 
-  const amount =
-    payment.amountDue ??
-    payment.amount ??
-    payload.amountDue ??
-    payload.amount ??
-    stall.amount ??
-    stall.dailyFee ??
-    (typeof stall.dailyFee === 'object' && stall.dailyFee !== null
-      ? stall.dailyFee.value ?? stall.dailyFee.toString?.()
-      : undefined)
+  return source
+    .map((entry) => {
+      const stall = entry.stall || entry
+      const attendance = entry.attendance || stall.attendance || null
+      const payment = entry.payment || {}
 
-  const paymentUrl =
-    payload.paymentUrl ||
-    payment.url ||
-    payment.paymentUrl ||
-    stall.click_payment_url ||
-    payload.click_payment_url ||
-    null
+      const rawAmount =
+        payment.amountDue ??
+        payment.amount ??
+        attendance?.amount ??
+        stall.dailyFee ??
+        stall.amount ??
+        (typeof stall.dailyFee === 'object' && stall.dailyFee !== null
+          ? stall.dailyFee.value ?? stall.dailyFee.toString?.()
+          : undefined)
 
-  return {
-    stall,
-    payment: {
-      amountDue: amount !== undefined && amount !== null ? Number(amount) : null,
-      currency:
-        payment.currency ||
-        payload.currency ||
-        (amount ? 'UZS' : null),
-      date: payment.date || payload.date || stall.date || stallForm.date,
-    },
-    attendance,
-    paymentUrl,
-  }
+      const normalizedAmount =
+        rawAmount !== undefined && rawAmount !== null && !Number.isNaN(Number(rawAmount))
+          ? Number(rawAmount)
+          : null
+
+      const paymentUrl =
+        entry.paymentUrl ||
+        payment.paymentUrl ||
+        payment.url ||
+        entry.payment_link ||
+        null
+
+      return {
+        id: stall.id || stall.stallId,
+        stall,
+        attendance,
+        payment: {
+          amountDue: normalizedAmount,
+          currency: payment.currency || (normalizedAmount ? 'UZS' : null),
+          date: payment.date || attendance?.date || stall.date || stallForm.date,
+          status: payment.status || attendance?.status || (attendance ? 'UNPAID' : 'NO_ATTENDANCE'),
+        },
+        paymentUrl,
+        paymentUrls: entry.paymentUrls || payment.urls || null,
+      }
+    })
+    .filter((entry) => entry.id)
 }
 
 function formatCurrency(amount, currency = 'UZS') {
@@ -208,7 +225,8 @@ async function fetchStall(updateUrl = true) {
   const stall = stallForm.stall?.trim()
   if (!stall) {
     stallError.value = 'Rasta raqamini kiriting'
-    stallResult.value = null
+    stallResults.value = []
+    selectedStallIndex.value = 0
     return
   }
 
@@ -216,9 +234,12 @@ async function fetchStall(updateUrl = true) {
   stallError.value = ''
   try {
     const data = await getPublicStall(stall, { date: stallForm.date || undefined })
-    const normalized = normalizeStall(data)
-    stallResult.value = normalized
-    if (!normalized) stallError.value = "Rasta bo'yicha ma'lumot topilmadi"
+    const normalized = normalizeStallResults(data)
+    stallResults.value = normalized
+    selectedStallIndex.value = normalized.length ? 0 : -1
+    if (!normalized.length) {
+      stallError.value = "Rasta bo'yicha ma'lumot topilmadi"
+    }
     if (updateUrl) {
       router.replace({
         query: {
@@ -230,7 +251,8 @@ async function fetchStall(updateUrl = true) {
     }
   } catch (e) {
     stallError.value = e?.response?.data?.message || e.message || "Rastani olishda xatolik"
-    stallResult.value = null
+    stallResults.value = []
+    selectedStallIndex.value = 0
   } finally {
     stallLoading.value = false
   }
@@ -260,29 +282,42 @@ async function openContractPayment(entry) {
   }
 }
 
-async function openStallPayment() {
-  const entry = stallResult.value
+async function openStallPayment(entry = activeStallEntry.value) {
   if (!entry) return
+  if (entry.payment?.status === 'PAID') {
+    stallError.value = "Bu rasta bugun uchun allaqachon to'langan"
+    return
+  }
+  if (!entry.attendance?.id) {
+    stallError.value = "Tanlangan rasta uchun online to'lov yaratilmagan. Iltimos ma'muriyatga murojaat qiling."
+    return
+  }
+
   if (entry.paymentUrl) {
     openUrl(entry.paymentUrl)
     return
   }
 
-  stallPaymentBusy.value = true
+  stallPaymentBusy.value = entry.attendance.id
   stallError.value = ''
   try {
-    const res = await getPublicStall(stallForm.stall?.trim(), {
-      date: stallForm.date || undefined,
-    })
-    const normalized = normalizeStall(res)
-    stallResult.value = normalized
-    const url = normalized?.paymentUrl
-    if (!url) throw new Error('To\'lov havolasi topilmadi')
+    const targetAttendanceId = entry.attendance.id
+    await fetchStall(false)
+    const refreshedIndex = stallResults.value.findIndex(
+      (s) => s.attendance?.id === targetAttendanceId,
+    )
+    if (refreshedIndex >= 0) {
+      selectedStallIndex.value = refreshedIndex
+    }
+    const refreshedEntry =
+      refreshedIndex >= 0 ? stallResults.value[refreshedIndex] : activeStallEntry.value
+    const url = refreshedEntry?.paymentUrl
+    if (!url) throw new Error("To'lov havolasi topilmadi")
     openUrl(url)
   } catch (e) {
     stallError.value = e?.response?.data?.message || e.message || "To'lov havolasini olishda xatolik"
   } finally {
-    stallPaymentBusy.value = false
+    stallPaymentBusy.value = null
   }
 }
 
@@ -291,6 +326,8 @@ function switchMode(nextMode) {
   storeError.value = ''
   stallError.value = ''
   if (nextMode === 'store') {
+    stallResults.value = []
+    selectedStallIndex.value = -1
     router.replace({
       query: {
         mode: 'store',
@@ -299,6 +336,8 @@ function switchMode(nextMode) {
       },
     })
   } else {
+    storeResults.value = []
+    selectedContractId.value = null
     router.replace({
       query: {
         mode: 'stall',
@@ -361,6 +400,17 @@ onUnmounted(() => {
     storeAutoSearchTimer = null
   }
 })
+
+watch(
+  () => stallResults.value.length,
+  (len) => {
+    if (!len) {
+      selectedStallIndex.value = -1
+    } else if (selectedStallIndex.value < 0 || selectedStallIndex.value >= len) {
+      selectedStallIndex.value = 0
+    }
+  },
+)
 </script>
 
 <template>
@@ -502,36 +552,63 @@ onUnmounted(() => {
 
             <div v-if="stallLoading" class="text-center text-sm text-slate-500">Ma'lumotlar yuklanmoqda...</div>
 
-            <CardBox v-if="!stallLoading && stallResult" class="border border-info-100 shadow-md">
-              <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <h2 class="text-xl font-semibold text-slate-700 dark:text-slate-100">
-                    Rasta: {{ stallResult.stall?.stallNumber || stallResult.stall?.id }}
-                  </h2>
-                  <p v-if="stallResult.stall?.description" class="text-sm text-slate-500 dark:text-slate-400">
-                    {{ stallResult.stall.description }}
-                  </p>
-                  <p v-if="stallResult.attendance?.status" class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">
-                    Holati: {{ stallResult.attendance.status }}
-                  </p>
-                </div>
-
-                <div class="flex flex-col items-end gap-2 text-right">
-                  <div class="text-lg font-semibold text-info-600 dark:text-info-400">
-                    {{ formatCurrency(stallResult.payment.amountDue, stallResult.payment.currency || 'UZS') }}
+            <div v-if="!stallLoading && stallResults.length" class="space-y-4">
+              <CardBox
+                v-for="(entry, idx) in stallResults"
+                :key="entry.id"
+                :class="[
+                  'border transition-shadow',
+                  selectedStallIndex === idx ? 'border-info-500 shadow-lg' : 'border-transparent',
+                ]"
+                @click="selectedStallIndex = idx"
+              >
+                <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h2 class="text-xl font-semibold text-slate-700 dark:text-slate-100">
+                      Rasta: {{ entry.stall?.stallNumber || entry.id }}
+                    </h2>
+                    <p v-if="entry.stall?.description" class="text-sm text-slate-500 dark:text-slate-400">
+                      {{ entry.stall.description }}
+                    </p>
+                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">
+                      Holati: {{ entry.payment?.status || 'NO_ATTENDANCE' }}
+                    </p>
+                    <p v-if="entry.attendance?.date" class="text-xs text-slate-400">
+                      Sana: {{ entry.attendance.date }}
+                    </p>
                   </div>
-                  <p v-if="stallResult.payment.date" class="text-xs text-slate-500 dark:text-slate-400">
-                    Sana: {{ stallResult.payment.date }}
-                  </p>
-                  <BaseButton
-                    color="success"
-                    :label="stallPaymentBusy ? 'Havola tayyorlanmoqda...' : 'To\'lovni boshlash'"
-                    :disabled="stallPaymentBusy"
-                    @click.stop.prevent="openStallPayment"
-                  />
+
+                  <div class="flex flex-col items-end gap-2 text-right">
+                    <div class="text-lg font-semibold text-info-600 dark:text-info-400">
+                      {{ formatCurrency(entry.payment?.amountDue, entry.payment?.currency || 'UZS') }}
+                    </div>
+                    <p v-if="entry.payment?.date" class="text-xs text-slate-500 dark:text-slate-400">
+                      To'lov kuni: {{ entry.payment.date }}
+                    </p>
+                    <p
+                      v-if="!entry.paymentUrl && entry.payment?.status !== 'PAID'"
+                      class="text-xs text-amber-600"
+                    >
+                      Online havola tayyor emas. Iltimos ma'muriyat bilan bog'laning.
+                    </p>
+                    <BaseButton
+                      color="success"
+                      :label="
+                        stallPaymentBusy === entry.attendance?.id
+                          ? 'Havola tayyorlanmoqda...'
+                          : entry.payment?.status === 'PAID'
+                            ? 'To\'langan'
+                            : entry.paymentUrl
+                              ? 'To\'lovni boshlash'
+                              : 'Havola talab qilish'
+                      "
+                      :disabled="entry.payment?.status === 'PAID' || stallPaymentBusy !== null"
+                      @click.stop.prevent="openStallPayment(entry)"
+                    />
+                  </div>
                 </div>
-              </div>
-            </CardBox>
+              </CardBox>
+            </div>
           </div>
         </CardBox>
 

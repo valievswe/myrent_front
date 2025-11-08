@@ -177,6 +177,14 @@ const stallLimit = ref(10)
 const stallTotal = ref(0)
 const selectedStallIds = ref(new Set())
 const attendanceByStall = ref({}) // { [stallId]: attendance }
+const selectedAttendances = computed(() =>
+  Array.from(selectedStallIds.value)
+    .map((id) => attendanceByStall.value[id])
+    .filter((attendance) => !!attendance)
+)
+const canBulkDeleteSelected = computed(() =>
+  selectedAttendances.value.some((attendance) => attendance && attendance.status !== 'PAID')
+)
 const bulkLoading = ref(false)
 const sections = ref([])
 const saleTypes = ref([])
@@ -266,6 +274,36 @@ function selectAllPage() {
 }
 function clearSelected() {
   selectedStallIds.value = new Set()
+}
+
+async function bulkRemoveSelectedAttendances() {
+  const candidates = Array.from(selectedStallIds.value)
+    .map((id) => attendanceByStall.value[id])
+    .filter((attendance) => attendance && attendance.status !== 'PAID')
+
+  if (!candidates.length) {
+    alert("Tanlanganlarda o'chirish uchun mos attendance yo'q")
+    return
+  }
+
+  if (
+    !confirm(
+      `Tanlanganlardan ${candidates.length} ta attendance bekor qilinsinmi? To'langanlari saqlanib qoladi.`,
+    )
+  )
+    return
+
+  bulkLoading.value = true
+  try {
+    for (const attendance of candidates) {
+      await deleteAttendance(attendance.id)
+    }
+    await loadAttendancesForDate()
+  } catch (e) {
+    alert(e?.response?.data?.message || e.message || "Mass o'chirishda xatolik")
+  } finally {
+    bulkLoading.value = false
+  }
 }
 // History per stall
 const historyByStall = ref({}) // { [stallId]: attendance[] }
@@ -410,6 +448,13 @@ onMounted(async () => {
               :disabled="bulkLoading"
               label="Tanlanganlarga yaratish"
               @click="bulkCreate"
+            />
+            <BaseButton
+              color="danger"
+              outline
+              :disabled="bulkLoading || !canBulkDeleteSelected"
+              label="Tanlanganlarni bekor qilish"
+              @click="bulkRemoveSelectedAttendances"
             />
             <BaseButton
               color="info"
