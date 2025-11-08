@@ -573,7 +573,11 @@ watch(
                 </div>
                 <div
                   class="mt-4 rounded border px-4 py-3 text-sm"
-                  :class="isStallPaid(entry) ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/20' : 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/30'}"
+                  :class="
+                    isStallPaid(entry)
+                      ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/20'
+                      : 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/30'
+                  "
                 >
                   <p class="font-medium">Kunlik to'lov ma'lumotlari</p>
                   <p v-if="isStallPaid(entry)">
