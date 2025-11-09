@@ -390,7 +390,7 @@ function storeColor(s) {
   return 'bg-gray-400'
 }
 function stallColor(st) {
-  const stStatus = attendanceMap.value[st.id]
+  const stStatus = getAttendanceStatus(st.id)
   if (stStatus === 'PAID') return 'bg-green-500'
   if (stStatus === 'UNPAID') return 'bg-red-500'
   return 'bg-gray-400'
