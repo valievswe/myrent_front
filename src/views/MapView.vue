@@ -11,9 +11,10 @@ import CardBoxModal from '@/components/CardBoxModal.vue'
 import { useRouter } from 'vue-router'
 import { listSections } from '@/services/sections'
 import { listStores } from '@/services/stores'
-import { listStalls } from '@/services/stalls'
-import { listAttendances } from '@/services/attendances'
+import { listStalls, updateStall } from '@/services/stalls'
+import { listAttendances, createAttendance, getAttendancePayUrl } from '@/services/attendances'
 import { listContracts } from '@/services/contracts'
+import { listSaleTypes } from '@/services/saleTypes'
 import PaginationControls from '@/components/PaginationControls.vue'
 import { getTashkentTodayISO, parseTashkentDate, startOfTashkentDay } from '@/utils/time'
 
@@ -25,10 +26,26 @@ const contractsWarning = ref('')
 const sections = ref([])
 const stores = ref([])
 const stalls = ref([])
-const attendanceMap = ref({}) // { [stallId]: 'PAID'|'UNPAID' }
+const saleTypes = ref([])
+const attendanceMap = ref({}) // { [stallId]: attendanceRecord }
 const storePaidMap = ref({}) // { [storeId]: boolean }
 const stallModalOpen = ref(false)
 const activeStall = ref(null)
+const attendanceModalOpen = ref(false)
+const attendanceForm = ref({ date: getTashkentTodayISO() })
+const attendanceSaving = ref(false)
+const attendanceModalError = ref('')
+const stallEditModalOpen = ref(false)
+const stallEditForm = ref({
+  stallNumber: '',
+  area: '',
+  sectionId: null,
+  saleTypeId: null,
+  description: '',
+})
+const stallEditSaving = ref(false)
+const stallEditModalError = ref('')
+const payLoading = ref(false)
 
 const typeFilter = ref('both') // both | stores | stalls
 const typeOptions = [
@@ -127,11 +144,23 @@ async function fetchAll() {
   }
 }
 
+async function fetchSaleTypesList() {
+  try {
+    const res = await listSaleTypes({ page: 1, limit: 500 })
+    saleTypes.value = res.data || []
+  } catch (e) {
+    console.error('Failed to load sale types', e)
+  }
+}
+
 async function fetchAttendanceForDate() {
   try {
     const res = await listAttendances({ dateFrom: date.value, dateTo: date.value, page: 1, limit: 5000 })
     const map = {}
-    for (const a of res.data || []) map[a.stallId] = a.status
+    for (const a of res.data || []) {
+      if (!a?.stallId) continue
+      map[a.stallId] = a
+    }
     attendanceMap.value = map
   } catch {}
 }
@@ -152,8 +181,7 @@ const handleResize = () => {
 }
 
 onMounted(async () => {
-  await fetchAll()
-  await fetchAttendanceForDate()
+  await Promise.all([fetchAll(), fetchSaleTypesList(), fetchAttendanceForDate()])
   if (typeof window !== 'undefined') {
     handleResize()
     window.addEventListener('resize', handleResize)
@@ -371,8 +399,13 @@ function stallColor(st) {
 function isStorePaid(store) {
   return !!(storePaidMap.value && storePaidMap.value[store?.id])
 }
+function getAttendanceEntry(stallId) {
+  if (!attendanceMap.value) return null
+  return attendanceMap.value[stallId] || null
+}
+
 function getAttendanceStatus(stallId) {
-  return (attendanceMap.value && attendanceMap.value[stallId]) || null
+  return getAttendanceEntry(stallId)?.status || null
 }
 
 function openStore(it) {
@@ -407,15 +440,16 @@ const activeStallSection = computed(() => {
   return (sections.value || []).find((sec) => sec.id === activeStall.value.sectionId) || null
 })
 
-const activeStallAttendance = computed(() => {
+const activeAttendanceEntry = computed(() => {
   if (!activeStall.value) return null
-  return getAttendanceStatus(activeStall.value.id)
+  return getAttendanceEntry(activeStall.value.id)
 })
 
-const hasPaymentLink = computed(() => {
-  if (!activeStall.value) return false
-  return Boolean(activeStall.value.click_payment_url || activeStall.value.payme_payment_url)
+const activeStallAttendance = computed(() => {
+  return activeAttendanceEntry.value?.status || null
 })
+
+const canPay = computed(() => Boolean(activeAttendanceEntry.value))
 
 function closeStallModal() {
   stallModalOpen.value = false
@@ -424,22 +458,101 @@ function closeStallModal() {
 
 function handleMakeAttendance() {
   if (!activeStall.value) return
-  router.push({
-    name: 'attendances',
-    query: { stallId: activeStall.value.id, stallNumber: activeStall.value.stallNumber },
-  })
-  closeStallModal()
+  attendanceForm.value = {
+    date: date.value || getTashkentTodayISO(),
+  }
+  attendanceModalError.value = ''
+  attendanceModalOpen.value = true
 }
 
-function handlePay() {
+function openStallEditModal() {
   if (!activeStall.value) return
-  const link = activeStall.value.click_payment_url || activeStall.value.payme_payment_url
-  if (link && typeof window !== 'undefined') {
-    window.open(link, '_blank', 'noopener')
-  } else {
-    router.push({ name: 'public-pay', query: { stall: activeStall.value.stallNumber } })
+  stallEditForm.value = {
+    stallNumber: activeStall.value.stallNumber || '',
+    area: activeStall.value.area ?? '',
+    sectionId: activeStall.value.sectionId ?? null,
+    saleTypeId: activeStall.value.saleTypeId ?? activeStall.value.SaleType?.id ?? null,
+    description: activeStall.value.description || '',
   }
-  closeStallModal()
+  stallEditModalError.value = ''
+  stallEditModalOpen.value = true
+}
+
+function resolvePaymentType() {
+  if (typeof window === 'undefined') return 'click'
+  return window.location.hostname === 'myrent.uz' ? 'payme' : 'click'
+}
+
+async function submitAttendanceModal() {
+  if (!activeStall.value) return
+  if (!attendanceForm.value.date) {
+    attendanceModalError.value = 'Sana tanlang'
+    return
+  }
+  attendanceSaving.value = true
+  attendanceModalError.value = ''
+  try {
+    await createAttendance({
+      stallId: activeStall.value.id,
+      date: attendanceForm.value.date,
+    })
+    attendanceModalOpen.value = false
+    await fetchAttendanceForDate()
+  } catch (e) {
+    attendanceModalError.value =
+      e?.response?.data?.message || e?.message || "Davomatni yaratib bo'lmadi"
+  } finally {
+    attendanceSaving.value = false
+  }
+}
+
+function applyUpdatedStall(updated) {
+  if (!updated) return
+  activeStall.value = updated
+  stalls.value = (stalls.value || []).map((s) => (s.id === updated.id ? updated : s))
+}
+
+async function submitStallEdit() {
+  if (!activeStall.value) return
+  stallEditSaving.value = true
+  stallEditModalError.value = ''
+  try {
+    const payload = {
+      stallNumber: stallEditForm.value.stallNumber?.trim() || null,
+      area: stallEditForm.value.area !== '' ? Number(stallEditForm.value.area) : null,
+      saleTypeId: stallEditForm.value.saleTypeId ? Number(stallEditForm.value.saleTypeId) : null,
+      sectionId: stallEditForm.value.sectionId ? Number(stallEditForm.value.sectionId) : null,
+      description: stallEditForm.value.description?.trim() || null,
+    }
+    const updated = await updateStall(activeStall.value.id, payload)
+    applyUpdatedStall(updated)
+    stallEditModalOpen.value = false
+  } catch (e) {
+    stallEditModalError.value = e?.response?.data?.message || "Rasta ma'lumotlarini saqlab bo'lmadi"
+  } finally {
+    stallEditSaving.value = false
+  }
+}
+
+async function handlePay() {
+  if (!activeAttendanceEntry.value) {
+    alert("Avval ushbu sana uchun davomat kiriting")
+    return
+  }
+  payLoading.value = true
+  try {
+    const paymentType = resolvePaymentType()
+    const { url } = await getAttendancePayUrl(activeAttendanceEntry.value.id, paymentType)
+    if (url && typeof window !== 'undefined') {
+      window.open(url, '_blank', 'noopener')
+    } else {
+      alert("To'lov havolasi topilmadi")
+    }
+  } catch (e) {
+    alert(e?.response?.data?.message || "To'lov havolasini olishda xatolik")
+  } finally {
+    payLoading.value = false
+  }
 }
 </script>
 
@@ -716,10 +829,93 @@ function handlePay() {
         </div>
         <div class="flex flex-col gap-3 sm:flex-row">
           <BaseButton label="Davomat kiritish" color="info" class="flex-1" @click="handleMakeAttendance" />
-          <BaseButton label="To'lov sahifasi" :color="hasPaymentLink ? 'success' : 'warning'" class="flex-1" @click="handlePay" />
+          <BaseButton
+            label="To'lov sahifasi"
+            :color="canPay ? 'success' : 'warning'"
+            class="flex-1"
+            :disabled="!canPay || payLoading"
+            @click="handlePay"
+          />
+        </div>
+        <p v-if="!canPay" class="text-xs text-amber-600">
+          Avval {{ date }} sanasi uchun davomat kiriting.
+        </p>
+        <div class="border-t border-dashed border-gray-200 pt-3 dark:border-gray-700">
+          <BaseButton label="Rastani tahrirlash" color="lightDark" class="w-full" @click="openStallEditModal" />
         </div>
       </div>
       <div v-else class="text-sm text-gray-500">Rasta tanlanmagan.</div>
+    </CardBoxModal>
+    <CardBoxModal
+      v-model="attendanceModalOpen"
+      title="Davomat kiritish"
+      button="info"
+      button-label="Saqlash"
+      has-cancel
+      :confirm-disabled="attendanceSaving"
+      :close-on-confirm="false"
+      @confirm="submitAttendanceModal"
+      @cancel="attendanceModalOpen = false"
+    >
+      <div class="space-y-4">
+        <FormField label="Sana">
+          <FormControl v-model="attendanceForm.date" type="date" />
+        </FormField>
+        <p class="text-xs text-gray-500">
+          Davomat {{ activeStall?.stallNumber || '' }} rastasi uchun yaratiladi.
+        </p>
+        <p v-if="attendanceModalError" class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {{ attendanceModalError }}
+        </p>
+      </div>
+    </CardBoxModal>
+    <CardBoxModal
+      v-model="stallEditModalOpen"
+      title="Rastani tahrirlash"
+      button="primary"
+      button-label="Saqlash"
+      has-cancel
+      :confirm-disabled="stallEditSaving"
+      :close-on-confirm="false"
+      @confirm="submitStallEdit"
+      @cancel="stallEditModalOpen = false"
+    >
+      <div class="space-y-4">
+        <FormField label="Rasta raqami">
+          <FormControl v-model="stallEditForm.stallNumber" placeholder="Masalan, P1-001" />
+        </FormField>
+        <FormField label="Maydon (m²)">
+          <FormControl v-model="stallEditForm.area" type="number" step="0.01" min="0" />
+        </FormField>
+        <FormField label="Bo'lim">
+          <select
+            v-model="stallEditForm.sectionId"
+            class="w-full rounded border border-gray-300 px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+          >
+            <option :value="null">Tanlanmagan</option>
+            <option v-for="sec in sections" :key="sec.id" :value="sec.id">
+              {{ sec.name || `Bo'lim #${sec.id}` }}
+            </option>
+          </select>
+        </FormField>
+        <FormField label="Sotuv turi">
+          <select
+            v-model="stallEditForm.saleTypeId"
+            class="w-full rounded border border-gray-300 px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+          >
+            <option :value="null">Tanlanmagan</option>
+            <option v-for="st in saleTypes" :key="st.id" :value="st.id">
+              {{ st.name }}
+            </option>
+          </select>
+        </FormField>
+        <FormField label="Izoh">
+          <FormControl v-model="stallEditForm.description" type="textarea" rows="3" placeholder="Izoh..." />
+        </FormField>
+        <p v-if="stallEditModalError" class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {{ stallEditModalError }}
+        </p>
+      </div>
     </CardBoxModal>
   </LayoutAuthenticated>
 </template>
