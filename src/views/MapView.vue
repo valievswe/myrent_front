@@ -61,17 +61,21 @@ function toArray(payload) {
   return []
 }
 
-async function fetchContractsForMap({ pageSize = 200, maxPages = 10 } = {}) {
+async function fetchPaginated(listFn, { baseParams = {}, pageSize = 500, maxPages = 20 } = {}) {
   const aggregated = []
   let currentPage = 1
   while (currentPage <= maxPages) {
-    const res = await listContracts({ page: currentPage, limit: pageSize })
+    const res = await listFn({ ...baseParams, page: currentPage, limit: pageSize })
     const chunk = toArray(res)
     aggregated.push(...chunk)
     if (chunk.length < pageSize) break
     currentPage += 1
   }
   return aggregated
+}
+
+async function fetchContractsForMap({ pageSize = 200, maxPages = 10 } = {}) {
+  return fetchPaginated(listContracts, { pageSize, maxPages })
 }
 
 async function fetchAll() {
@@ -82,8 +86,15 @@ async function fetchAll() {
     const [secRes, stoRes, staRes, conRes] = await Promise.all([
       listSections(),
       // Backend defaults to only free; request all for the map
-      listStores({ page: 1, limit: 1000, withContracts: true, onlyFree: false }),
-      listStalls({ page: 1, limit: 1000 }),
+      fetchPaginated(listStores, {
+        baseParams: { withContracts: true, onlyFree: false },
+        pageSize: 500,
+        maxPages: 50,
+      }),
+      fetchPaginated(listStalls, {
+        pageSize: 1000,
+        maxPages: 50,
+      }),
       fetchContractsForMap().catch((err) => {
         const status = err?.response?.status
         if (status === 401 || status === 403) {
@@ -95,8 +106,8 @@ async function fetchAll() {
       }),
     ])
     sections.value = toArray(secRes)
-    stores.value = toArray(stoRes)
-    stalls.value = toArray(staRes)
+    stores.value = stoRes
+    stalls.value = staRes
     // Build store -> paid map from contracts with any PAID transaction
     const paid = {}
     for (const c of toArray(conRes)) {
@@ -188,8 +199,11 @@ const sectionsForDisplay = computed(() => {
 
   return base.sort((a, b) => {
     if (a.isFallback !== b.isFallback) return a.isFallback ? 1 : -1
-    if (a.id === null && b.id !== null) return 1
-    if (a.id !== null && b.id === null) return -1
+    const aHasId = typeof a.id === 'number' && Number.isFinite(a.id)
+    const bHasId = typeof b.id === 'number' && Number.isFinite(b.id)
+    if (aHasId && bHasId) return a.id - b.id
+    if (aHasId) return -1
+    if (bHasId) return 1
     if (a.id === b.id) return 0
     return String(a.name).localeCompare(String(b.name))
   })
