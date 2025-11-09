@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
@@ -7,14 +7,17 @@ import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
+import CardBoxModal from '@/components/CardBoxModal.vue'
+import { useRouter } from 'vue-router'
 import { listSections } from '@/services/sections'
 import { listStores } from '@/services/stores'
 import { listStalls } from '@/services/stalls'
 import { listAttendances } from '@/services/attendances'
 import { listContracts } from '@/services/contracts'
 import PaginationControls from '@/components/PaginationControls.vue'
-import { formatTashkentDate, getTashkentTodayISO, parseTashkentDate, startOfTashkentDay } from '@/utils/time'
+import { getTashkentTodayISO, parseTashkentDate, startOfTashkentDay } from '@/utils/time'
 
+const router = useRouter()
 const loading = ref(false)
 const errorMsg = ref('')
 const contractsWarning = ref('')
@@ -24,6 +27,8 @@ const stores = ref([])
 const stalls = ref([])
 const attendanceMap = ref({}) // { [stallId]: 'PAID'|'UNPAID' }
 const storePaidMap = ref({}) // { [storeId]: boolean }
+const stallModalOpen = ref(false)
+const activeStall = ref(null)
 
 const typeFilter = ref('both') // both | stores | stalls
 const typeOptions = [
@@ -131,9 +136,33 @@ async function fetchAttendanceForDate() {
   } catch {}
 }
 
+const responsiveSectionLimit = () => {
+  if (typeof window === 'undefined') return 1
+  const width = window.innerWidth
+  if (width < 640) return 1
+  if (width < 1024) return 2
+  return 3
+}
+
+const sectionPage = ref(1)
+const sectionLimit = ref(responsiveSectionLimit())
+
+const handleResize = () => {
+  sectionLimit.value = responsiveSectionLimit()
+}
+
 onMounted(async () => {
   await fetchAll()
   await fetchAttendanceForDate()
+  if (typeof window !== 'undefined') {
+    handleResize()
+    window.addEventListener('resize', handleResize)
+  }
+})
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleResize)
+  }
 })
 watch(date, fetchAttendanceForDate)
 
@@ -214,8 +243,6 @@ const filteredSections = computed(() => {
   return sectionsForDisplay.value.filter((s) => s.key === String(selectedSectionId.value))
 })
 
-const sectionPage = ref(1)
-const sectionLimit = ref(3)
 const paginatedSections = computed(() => {
   const list = filteredSections.value || []
   const start = (sectionPage.value - 1) * sectionLimit.value
@@ -360,14 +387,8 @@ function openStore(it) {
   } catch {}
 }
 function openStall(it) {
-  const stStatus = attendanceMap.value[it.id] || '-'
-  try {
-    alert(
-      `Rasta: ${it.stallNumber || `#${it.id}`}\nID: #${it.id}\nBo'lim: ${
-        it.sectionId ?? '-'
-      }\nBugun: ${stStatus}`,
-    )
-  } catch {}
+  activeStall.value = it
+  stallModalOpen.value = true
 }
 
 function storeTooltip(store) {
@@ -379,6 +400,46 @@ function storeTooltip(store) {
 function stallTooltip(stall) {
   const paidStatus = getAttendanceStatus(stall.id) || '-'
   return `Rasta: ${stall.stallNumber || `#${stall.id}`}\nID: #${stall.id}\nBugun: ${paidStatus}\nIzoh: ${stall.description || '-'}`
+}
+
+const activeStallSection = computed(() => {
+  if (!activeStall.value) return null
+  return (sections.value || []).find((sec) => sec.id === activeStall.value.sectionId) || null
+})
+
+const activeStallAttendance = computed(() => {
+  if (!activeStall.value) return null
+  return getAttendanceStatus(activeStall.value.id)
+})
+
+const hasPaymentLink = computed(() => {
+  if (!activeStall.value) return false
+  return Boolean(activeStall.value.click_payment_url || activeStall.value.payme_payment_url)
+})
+
+function closeStallModal() {
+  stallModalOpen.value = false
+  activeStall.value = null
+}
+
+function handleMakeAttendance() {
+  if (!activeStall.value) return
+  router.push({
+    name: 'attendances',
+    query: { stallId: activeStall.value.id, stallNumber: activeStall.value.stallNumber },
+  })
+  closeStallModal()
+}
+
+function handlePay() {
+  if (!activeStall.value) return
+  const link = activeStall.value.click_payment_url || activeStall.value.payme_payment_url
+  if (link && typeof window !== 'undefined') {
+    window.open(link, '_blank', 'noopener')
+  } else {
+    router.push({ name: 'public-pay', query: { stall: activeStall.value.stallNumber } })
+  }
+  closeStallModal()
 }
 </script>
 
@@ -536,24 +597,25 @@ function stallTooltip(stall) {
                   Bo'sh: {{ card.stats.store.free }} · Band: {{ card.stats.store.busy }} · To'langan: {{ card.stats.store.paid }}
                 </span>
               </div>
-              <div
-                v-if="card.storeList.length"
-                class="grid gap-2"
-                :style="gridStyle(card.storeList.length, storeCellSize)"
-              >
+              <div v-if="card.storeList.length" class="overflow-x-auto">
                 <div
-                  v-for="s in card.storeList"
-                  :key="s.id"
-                  class="flex cursor-pointer flex-col items-center justify-center rounded-lg px-2 text-center text-xs font-semibold text-white shadow-sm transition hover:shadow-md"
-                  :class="storeColor(s)"
-                  :style="{ minHeight: storeCellSize }"
-                  :title="storeTooltip(s)"
-                  @click="openStore(s)"
+                  class="grid gap-2"
+                  :style="gridStyle(card.storeList.length, storeCellSize)"
                 >
-                  <div class="text-[11px] font-semibold">
-                    {{ s.storeNumber || `#${s.id}` }}
+                  <div
+                    v-for="s in card.storeList"
+                    :key="s.id"
+                    class="flex cursor-pointer flex-col items-center justify-center rounded-lg px-2 text-center text-xs font-semibold text-white shadow-sm transition hover:shadow-md"
+                    :class="storeColor(s)"
+                    :style="{ minHeight: storeCellSize }"
+                    :title="storeTooltip(s)"
+                    @click="openStore(s)"
+                  >
+                    <div class="text-[11px] font-semibold">
+                      {{ s.storeNumber || `#${s.id}` }}
+                    </div>
+                    <div class="text-[10px] text-white/80">ID: #{{ s.id }}</div>
                   </div>
-                  <div class="text-[10px] text-white/80">ID: #{{ s.id }}</div>
                 </div>
               </div>
               <div
@@ -571,24 +633,25 @@ function stallTooltip(stall) {
                   PAID: {{ card.stats.stall.paid }} · UNPAID: {{ card.stats.stall.unpaid }} · Yo'q: {{ card.stats.stall.none }}
                 </span>
               </div>
-              <div
-                v-if="card.stallList.length"
-                class="grid gap-2"
-                :style="gridStyle(card.stallList.length, stallCellSize)"
-              >
+              <div v-if="card.stallList.length" class="overflow-x-auto">
                 <div
-                  v-for="st in card.stallList"
-                  :key="st.id"
-                  class="flex cursor-pointer flex-col items-center justify-center rounded-lg px-2 text-center text-xs font-semibold text-white shadow-sm transition hover:shadow-md"
-                  :class="stallColor(st)"
-                  :style="{ minHeight: stallCellSize }"
-                  :title="stallTooltip(st)"
-                  @click="openStall(st)"
+                  class="grid gap-2"
+                  :style="gridStyle(card.stallList.length, stallCellSize)"
                 >
-                  <div class="text-[11px] font-semibold">
-                    {{ st.stallNumber || `#${st.id}` }}
+                  <div
+                    v-for="st in card.stallList"
+                    :key="st.id"
+                    class="flex cursor-pointer flex-col items-center justify-center rounded-lg px-2 text-center text-xs font-semibold text-white shadow-sm transition hover:shadow-md"
+                    :class="stallColor(st)"
+                    :style="{ minHeight: stallCellSize }"
+                    :title="stallTooltip(st)"
+                    @click="openStall(st)"
+                  >
+                    <div class="text-[11px] font-semibold">
+                      {{ st.stallNumber || `#${st.id}` }}
+                    </div>
+                    <div class="text-[10px] text-white/80">ID: #{{ st.id }}</div>
                   </div>
-                  <div class="text-[10px] text-white/80">ID: #{{ st.id }}</div>
                 </div>
               </div>
               <div
@@ -609,5 +672,54 @@ function stallTooltip(stall) {
         :limit-options="[1, 3, 5, 10]"
       />
     </SectionMain>
+    <CardBoxModal
+      v-model="stallModalOpen"
+      title="Rasta tafsilotlari"
+      button="light"
+      button-label="Yopish"
+      has-cancel
+      @cancel="closeStallModal"
+      @confirm="closeStallModal"
+    >
+      <div v-if="activeStall" class="space-y-3 text-sm text-gray-700 dark:text-gray-200">
+        <div>
+          <div class="text-base font-semibold">
+            {{ activeStall.stallNumber || `#${activeStall.id}` }}
+          </div>
+          <div class="text-xs text-gray-500">ID: #{{ activeStall.id }}</div>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div>
+            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Bo'lim</div>
+            <div>{{ activeStallSection?.name || `Bo'lim #${activeStall.sectionId || '-'}` }}</div>
+          </div>
+          <div>
+            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Maydon</div>
+            <div>{{ activeStall.area }} m²</div>
+          </div>
+          <div>
+            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Sotuv turi</div>
+            <div>{{ activeStall.SaleType?.name || '-' }}</div>
+          </div>
+          <div>
+            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Kunlik to'lov</div>
+            <div>{{ activeStall.dailyFee ?? '-' }}</div>
+          </div>
+          <div>
+            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Bugungi holat</div>
+            <div>{{ activeStallAttendance || "Ma'lumot yo'q" }}</div>
+          </div>
+          <div>
+            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Izoh</div>
+            <div>{{ activeStall.description || '-' }}</div>
+          </div>
+        </div>
+        <div class="flex flex-col gap-3 sm:flex-row">
+          <BaseButton label="Davomat kiritish" color="info" class="flex-1" @click="handleMakeAttendance" />
+          <BaseButton label="To'lov sahifasi" :color="hasPaymentLink ? 'success' : 'warning'" class="flex-1" @click="handlePay" />
+        </div>
+      </div>
+      <div v-else class="text-sm text-gray-500">Rasta tanlanmagan.</div>
+    </CardBoxModal>
   </LayoutAuthenticated>
 </template>
