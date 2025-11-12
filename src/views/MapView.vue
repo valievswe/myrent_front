@@ -12,7 +12,7 @@ import { useRouter } from 'vue-router'
 import { listSections } from '@/services/sections'
 import { listStores } from '@/services/stores'
 import { listStalls, updateStall } from '@/services/stalls'
-import { listAttendances, createAttendance, getAttendancePayUrl } from '@/services/attendances'
+import { listAttendances, createAttendance, deleteAttendance, getAttendancePayUrl } from '@/services/attendances'
 import { listContracts } from '@/services/contracts'
 import { listSaleTypes } from '@/services/saleTypes'
 import PaginationControls from '@/components/PaginationControls.vue'
@@ -46,6 +46,8 @@ const stallEditForm = ref({
 const stallEditSaving = ref(false)
 const stallEditModalError = ref('')
 const payLoading = ref(false)
+const undoAttendanceLoading = ref(false)
+const postPaymentRefreshInProgress = ref(false)
 
 const typeFilter = ref('both') // both | stores | stalls
 const typeOptions = [
@@ -60,8 +62,81 @@ const zoom = ref(1)
 const zoomPercent = computed(() => Math.round(zoom.value * 100))
 const storeCellSize = computed(() => `${Math.round(56 * zoom.value)}px`)
 const stallCellSize = computed(() => `${Math.round(48 * zoom.value)}px`)
+const saleTypeSearch = ref('')
+const SALE_TYPE_RESULTS_LIMIT = 20
+const persistedFilters = loadMapFilters()
+if (persistedFilters) {
+  if (persistedFilters.type && ['both', 'stores', 'stalls'].includes(persistedFilters.type)) {
+    typeFilter.value = persistedFilters.type
+  }
+  if (Object.prototype.hasOwnProperty.call(persistedFilters, 'sectionId')) {
+    selectedSectionId.value = persistedFilters.sectionId
+  }
+}
+const filteredSaleTypeOptions = computed(() => {
+  const list = saleTypes.value || []
+  const term = saleTypeSearch.value.trim().toLowerCase()
+  if (!term) return list.slice(0, SALE_TYPE_RESULTS_LIMIT)
+  return list.filter((st) => (st.name || '').toLowerCase().includes(term)).slice(0, SALE_TYPE_RESULTS_LIMIT)
+})
+const selectedSaleTypeName = computed(() => {
+  const selected = (saleTypes.value || []).find((st) => st.id === stallEditForm.value.saleTypeId)
+  return selected?.name || ''
+})
 
 const NO_SECTION_KEY = '__no_section__'
+const MAP_FILTERS_STORAGE_KEY = 'map-view-filters-v1'
+
+const integerAmountFormatter = new Intl.NumberFormat('uz-UZ', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+})
+const fractionAmountFormatter = new Intl.NumberFormat('uz-UZ', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+function normalizeDecimal(value) {
+  if (value === null || value === undefined) return null
+  const num = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(num)) return null
+  return Math.round(num * 100) / 100
+}
+
+function formatAmountDisplay(value) {
+  const normalized = normalizeDecimal(value)
+  if (normalized === null) return '—'
+  const formatter = Number.isInteger(normalized) ? integerAmountFormatter : fractionAmountFormatter
+  return formatter.format(normalized)
+}
+
+function loadMapFilters() {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(MAP_FILTERS_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function persistMapFilters(filters) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(MAP_FILTERS_STORAGE_KEY, JSON.stringify(filters))
+  } catch {
+    // Ignored: localStorage unavailable
+  }
+}
+
+function buildStorePaidLookup(contractPayload) {
+  const paid = {}
+  for (const c of toArray(contractPayload)) {
+    const hasPaid = Array.isArray(c.transactions) && c.transactions.some((t) => t.status === 'PAID')
+    if (hasPaid && c.storeId) paid[c.storeId] = true
+  }
+  return paid
+}
 
 function isStoreOccupied(store) {
   if (typeof store?.isOccupied === 'boolean') return store.isOccupied
@@ -131,16 +206,26 @@ async function fetchAll() {
     stores.value = stoRes
     stalls.value = staRes
     // Build store -> paid map from contracts with any PAID transaction
-    const paid = {}
-    for (const c of toArray(conRes)) {
-      const hasPaid = Array.isArray(c.transactions) && c.transactions.some((t) => t.status === 'PAID')
-      if (hasPaid && c.storeId) paid[c.storeId] = true
-    }
-    storePaidMap.value = paid
+    storePaidMap.value = buildStorePaidLookup(conRes)
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || 'Yuklashda xatolik'
   } finally {
     loading.value = false
+  }
+}
+
+async function refreshStorePaidStatus() {
+  try {
+    const conRes = await fetchContractsForMap()
+    storePaidMap.value = buildStorePaidLookup(conRes)
+  } catch (e) {
+    const status = e?.response?.status
+    if (status === 401 || status === 403) {
+      contractsWarning.value =
+        "Shartnomalar ma'lumotlarini yuklashga ruxsat yo'q, do'konlarning to'lov holati ko'rsatilmaydi."
+      return
+    }
+    console.error('Failed to refresh store payments', e)
   }
 }
 
@@ -163,6 +248,27 @@ async function fetchAttendanceForDate() {
     }
     attendanceMap.value = map
   } catch {}
+}
+
+async function refreshAfterPayment() {
+  if (postPaymentRefreshInProgress.value) return
+  postPaymentRefreshInProgress.value = true
+  try {
+    await Promise.all([fetchAttendanceForDate(), refreshStorePaidStatus()])
+  } catch (e) {
+    console.error('Failed to refresh data after payment', e)
+  } finally {
+    postPaymentRefreshInProgress.value = false
+  }
+}
+
+function schedulePostPaymentRefresh() {
+  refreshAfterPayment()
+  if (typeof window !== 'undefined') {
+    window.setTimeout(() => {
+      refreshAfterPayment()
+    }, 4000)
+  }
 }
 
 const responsiveSectionLimit = () => {
@@ -333,6 +439,14 @@ const overallSummary = computed(() => {
 })
 
 watch(
+  [selectedSectionId, typeFilter],
+  ([sectionId, type]) => {
+    persistMapFilters({ sectionId, type })
+  },
+  { immediate: false },
+)
+
+watch(
   () => filteredSections.value.length,
   () => {
     const totalPages = Math.max(1, Math.ceil((filteredSections.value.length || 0) / sectionLimit.value))
@@ -382,6 +496,21 @@ function filterStallsBySection(sectionId) {
   return (stalls.value || [])
     .filter((s) => matchesSection(s.sectionId, sectionId))
     .filter((s) => !q || (s.description || '').toLowerCase().includes(q) || String(s.id).includes(q))
+}
+
+function selectSaleTypeOption(option) {
+  if (!option) {
+    stallEditForm.value.saleTypeId = null
+    saleTypeSearch.value = ''
+    return
+  }
+  stallEditForm.value.saleTypeId = option.id
+  saleTypeSearch.value = option.name || ''
+}
+
+function clearSaleTypeSelection() {
+  stallEditForm.value.saleTypeId = null
+  saleTypeSearch.value = ''
 }
 
 function storeColor(s) {
@@ -439,7 +568,7 @@ const activeStallSection = computed(() => {
   if (!activeStall.value) return null
   return (sections.value || []).find((sec) => sec.id === activeStall.value.sectionId) || null
 })
-
+const activeStallDailyFeeDisplay = computed(() => formatAmountDisplay(activeStall.value?.dailyFee))
 const activeAttendanceEntry = computed(() => {
   if (!activeStall.value) return null
   return getAttendanceEntry(activeStall.value.id)
@@ -450,6 +579,11 @@ const activeStallAttendance = computed(() => {
 })
 
 const canPay = computed(() => Boolean(activeAttendanceEntry.value))
+const canUndoAttendance = computed(() => {
+  if (!activeAttendanceEntry.value) return false
+  const status = String(activeAttendanceEntry.value.status || '').toUpperCase()
+  return status !== 'PAID'
+})
 
 function closeStallModal() {
   stallModalOpen.value = false
@@ -465,6 +599,21 @@ function handleMakeAttendance() {
   attendanceModalOpen.value = true
 }
 
+async function handleUndoAttendance() {
+  if (!activeAttendanceEntry.value || !canUndoAttendance.value || undoAttendanceLoading.value) return
+  const confirmed = typeof window === 'undefined' ? true : window.confirm("Ushbu sana uchun davomatni bekor qilasizmi?")
+  if (!confirmed) return
+  undoAttendanceLoading.value = true
+  try {
+    await deleteAttendance(activeAttendanceEntry.value.id)
+    await fetchAttendanceForDate()
+  } catch (e) {
+    alert(e?.response?.data?.message || "Davomatni bekor qilib bo'lmadi")
+  } finally {
+    undoAttendanceLoading.value = false
+  }
+}
+
 function openStallEditModal() {
   if (!activeStall.value) return
   stallEditForm.value = {
@@ -474,6 +623,7 @@ function openStallEditModal() {
     saleTypeId: activeStall.value.saleTypeId ?? activeStall.value.SaleType?.id ?? null,
     description: activeStall.value.description || '',
   }
+  saleTypeSearch.value = activeStall.value.SaleType?.name || ''
   stallEditModalError.value = ''
   stallEditModalOpen.value = true
 }
@@ -510,6 +660,9 @@ function applyUpdatedStall(updated) {
   if (!updated) return
   activeStall.value = updated
   stalls.value = (stalls.value || []).map((s) => (s.id === updated.id ? updated : s))
+  if (stallEditModalOpen.value) {
+    saleTypeSearch.value = updated?.SaleType?.name || ''
+  }
 }
 
 async function submitStallEdit() {
@@ -545,6 +698,7 @@ async function handlePay() {
     const { url } = await getAttendancePayUrl(activeAttendanceEntry.value.id, paymentType)
     if (url && typeof window !== 'undefined') {
       window.open(url, '_blank', 'noopener')
+      schedulePostPaymentRefresh()
     } else {
       alert("To'lov havolasi topilmadi")
     }
@@ -816,7 +970,7 @@ async function handlePay() {
           </div>
           <div>
             <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Kunlik to'lov</div>
-            <div>{{ activeStall.dailyFee ?? '-' }}</div>
+            <div>{{ activeStallDailyFeeDisplay }}</div>
           </div>
           <div>
             <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Bugungi holat</div>
@@ -835,6 +989,15 @@ async function handlePay() {
             class="flex-1"
             :disabled="!canPay || payLoading"
             @click="handlePay"
+          />
+          <BaseButton
+            v-if="canUndoAttendance"
+            label="Davomatni bekor qilish"
+            color="warning"
+            outline
+            class="flex-1"
+            :disabled="undoAttendanceLoading"
+            @click="handleUndoAttendance"
           />
         </div>
         <p v-if="!canPay" class="text-xs text-amber-600">
@@ -899,15 +1062,42 @@ async function handlePay() {
           </select>
         </FormField>
         <FormField label="Sotuv turi">
-          <select
-            v-model="stallEditForm.saleTypeId"
-            class="w-full rounded border border-gray-300 px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-          >
-            <option :value="null">Tanlanmagan</option>
-            <option v-for="st in saleTypes" :key="st.id" :value="st.id">
-              {{ st.name }}
-            </option>
-          </select>
+          <div class="space-y-2">
+            <FormControl v-model="saleTypeSearch" placeholder="Sotuv turini izlash..." />
+            <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+              <span>Tanlangan: {{ selectedSaleTypeName || 'Tanlanmagan' }}</span>
+              <button
+                type="button"
+                class="text-emerald-600 transition hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-emerald-300 dark:hover:text-emerald-200"
+                :disabled="!stallEditForm.saleTypeId"
+                @click.prevent="clearSaleTypeSelection"
+              >
+                Tozalash
+              </button>
+            </div>
+            <div class="max-h-48 overflow-auto rounded border border-gray-200 dark:border-gray-700">
+              <button
+                v-for="st in filteredSaleTypeOptions"
+                :key="st.id"
+                type="button"
+                class="w-full px-3 py-2 text-left text-sm transition"
+                :class="[
+                  stallEditForm.saleTypeId === st.id
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-100'
+                    : 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800/40',
+                ]"
+                @click="selectSaleTypeOption(st)"
+              >
+                {{ st.name }}
+              </button>
+              <div
+                v-if="!filteredSaleTypeOptions.length"
+                class="px-3 py-2 text-sm text-gray-500 dark:text-gray-300"
+              >
+                Mos keluvchi sotuv turi topilmadi
+              </div>
+            </div>
+          </div>
         </FormField>
         <FormField label="Izoh">
           <FormControl v-model="stallEditForm.description" type="textarea" rows="3" placeholder="Izoh..." />

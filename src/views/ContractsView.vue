@@ -105,6 +105,22 @@ function getPaymentUrl(contract) {
   return store.payme_payment_url || store.click_payment_url || ''
 }
 
+function handleContractPayment(contract) {
+  const url = getPaymentUrl(contract)
+  if (!url) {
+    alert("To'lov havolasi topilmadi")
+    return
+  }
+  openPayment(url)
+  if (typeof window !== 'undefined') {
+    window.setTimeout(() => {
+      fetchData()
+    }, 4000)
+  } else {
+    fetchData()
+  }
+}
+
 async function fetchData() {
   loading.value = true
   errorMsg.value = ''
@@ -523,7 +539,7 @@ async function exportContractTransactionsCSV() {
                         outline
                         label="To'lov"
                         :disabled="!getPaymentUrl(it) || !it.isActive"
-                        @click="openPayment(getPaymentUrl(it))"
+                        @click="handleContractPayment(it)"
                       />
                       <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
                       <BaseButton
