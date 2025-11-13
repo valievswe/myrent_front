@@ -12,7 +12,12 @@ import { useRouter } from 'vue-router'
 import { listSections } from '@/services/sections'
 import { listStores } from '@/services/stores'
 import { listStalls, updateStall } from '@/services/stalls'
-import { listAttendances, createAttendance, deleteAttendance, getAttendancePayUrl } from '@/services/attendances'
+import {
+  listAttendances,
+  createAttendance,
+  deleteAttendance,
+  getAttendancePayUrl,
+} from '@/services/attendances'
 import { listContracts } from '@/services/contracts'
 import { listSaleTypes } from '@/services/saleTypes'
 import PaginationControls from '@/components/PaginationControls.vue'
@@ -43,6 +48,14 @@ const stallEditForm = ref({
   saleTypeId: null,
   description: '',
 })
+// Sale type combobox state
+const saleTypeDropdownOpen = ref(false)
+
+function pickSaleType(st) {
+  stallEditForm.value.saleTypeId = st ? st.id : null
+  saleTypeSearch.value = st ? st.name : ''
+  saleTypeDropdownOpen.value = false
+}
 const stallEditSaving = ref(false)
 const stallEditModalError = ref('')
 const payLoading = ref(false)
@@ -51,7 +64,7 @@ const postPaymentRefreshInProgress = ref(false)
 
 const typeFilter = ref('both') // both | stores | stalls
 const typeOptions = [
-  { value: 'both', label: "Ikkalasi" },
+  { value: 'both', label: 'Ikkalasi' },
   { value: 'stores', label: "Do'konlar" },
   { value: 'stalls', label: 'Rastalar' },
 ]
@@ -77,7 +90,9 @@ const filteredSaleTypeOptions = computed(() => {
   const list = saleTypes.value || []
   const term = saleTypeSearch.value.trim().toLowerCase()
   if (!term) return list.slice(0, SALE_TYPE_RESULTS_LIMIT)
-  return list.filter((st) => (st.name || '').toLowerCase().includes(term)).slice(0, SALE_TYPE_RESULTS_LIMIT)
+  return list
+    .filter((st) => (st.name || '').toLowerCase().includes(term))
+    .slice(0, SALE_TYPE_RESULTS_LIMIT)
 })
 const selectedSaleTypeName = computed(() => {
   const selected = (saleTypes.value || []).find((st) => st.id === stallEditForm.value.saleTypeId)
@@ -240,7 +255,12 @@ async function fetchSaleTypesList() {
 
 async function fetchAttendanceForDate() {
   try {
-    const res = await listAttendances({ dateFrom: date.value, dateTo: date.value, page: 1, limit: 5000 })
+    const res = await listAttendances({
+      dateFrom: date.value,
+      dateTo: date.value,
+      page: 1,
+      limit: 5000,
+    })
     const map = {}
     for (const a of res.data || []) {
       if (!a?.stallId) continue
@@ -449,7 +469,10 @@ watch(
 watch(
   () => filteredSections.value.length,
   () => {
-    const totalPages = Math.max(1, Math.ceil((filteredSections.value.length || 0) / sectionLimit.value))
+    const totalPages = Math.max(
+      1,
+      Math.ceil((filteredSections.value.length || 0) / sectionLimit.value),
+    )
     if (sectionPage.value > totalPages) sectionPage.value = totalPages
     if (sectionPage.value < 1) sectionPage.value = 1
   },
@@ -458,7 +481,10 @@ watch(
 watch(
   () => sectionLimit.value,
   () => {
-    const totalPages = Math.max(1, Math.ceil((filteredSections.value.length || 0) / sectionLimit.value))
+    const totalPages = Math.max(
+      1,
+      Math.ceil((filteredSections.value.length || 0) / sectionLimit.value),
+    )
     if (sectionPage.value > totalPages) sectionPage.value = totalPages
   },
 )
@@ -489,13 +515,20 @@ function filterStoresBySection(sectionId) {
   const q = normSearch.value
   return (stores.value || [])
     .filter((s) => matchesSection(s.sectionId, sectionId))
-    .filter((s) => !q || (s.storeNumber || '').toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q))
+    .filter(
+      (s) =>
+        !q ||
+        (s.storeNumber || '').toLowerCase().includes(q) ||
+        (s.description || '').toLowerCase().includes(q),
+    )
 }
 function filterStallsBySection(sectionId) {
   const q = normSearch.value
   return (stalls.value || [])
     .filter((s) => matchesSection(s.sectionId, sectionId))
-    .filter((s) => !q || (s.description || '').toLowerCase().includes(q) || String(s.id).includes(q))
+    .filter(
+      (s) => !q || (s.description || '').toLowerCase().includes(q) || String(s.id).includes(q),
+    )
 }
 
 function selectSaleTypeOption(option) {
@@ -600,8 +633,12 @@ function handleMakeAttendance() {
 }
 
 async function handleUndoAttendance() {
-  if (!activeAttendanceEntry.value || !canUndoAttendance.value || undoAttendanceLoading.value) return
-  const confirmed = typeof window === 'undefined' ? true : window.confirm("Ushbu sana uchun davomatni bekor qilasizmi?")
+  if (!activeAttendanceEntry.value || !canUndoAttendance.value || undoAttendanceLoading.value)
+    return
+  const confirmed =
+    typeof window === 'undefined'
+      ? true
+      : window.confirm('Ushbu sana uchun davomatni bekor qilasizmi?')
   if (!confirmed) return
   undoAttendanceLoading.value = true
   try {
@@ -627,6 +664,15 @@ function openStallEditModal() {
   stallEditModalError.value = ''
   stallEditModalOpen.value = true
 }
+
+// Keep combobox input in sync with selected saleTypeId
+watch(
+  () => stallEditForm.value.saleTypeId,
+  (id) => {
+    const st = (saleTypes.value || []).find((s) => s.id === Number(id))
+    saleTypeSearch.value = st ? st.name : ''
+  },
+)
 
 function resolvePaymentType() {
   if (typeof window === 'undefined') return 'click'
@@ -689,7 +735,7 @@ async function submitStallEdit() {
 
 async function handlePay() {
   if (!activeAttendanceEntry.value) {
-    alert("Avval ushbu sana uchun davomat kiriting")
+    alert('Avval ushbu sana uchun davomat kiriting')
     return
   }
   payLoading.value = true
@@ -715,8 +761,13 @@ async function handlePay() {
     <SectionMain wide>
       <SectionTitle first>Raqamli Xarita (Bo'limlar, Do'konlar, Rastalar)</SectionTitle>
 
-      <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">{{ errorMsg }}</div>
-      <div v-else-if="contractsWarning" class="mb-3 rounded border border-amber-200 bg-amber-50 p-3 text-amber-700">
+      <div v-if="errorMsg" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">
+        {{ errorMsg }}
+      </div>
+      <div
+        v-else-if="contractsWarning"
+        class="mb-3 rounded border border-amber-200 bg-amber-50 p-3 text-amber-700"
+      >
         {{ contractsWarning }}
       </div>
       <div
@@ -734,9 +785,11 @@ async function handlePay() {
                 v-for="opt in typeOptions"
                 :key="opt.value"
                 class="flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1 text-sm font-medium transition"
-                :class="typeFilter === opt.value
-                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-500/10 dark:text-emerald-100'
-                  : 'border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-300'"
+                :class="
+                  typeFilter === opt.value
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-500/10 dark:text-emerald-100'
+                    : 'border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-300'
+                "
               >
                 <input type="radio" class="sr-only" :value="opt.value" v-model="typeFilter" />
                 <span>{{ opt.label }}</span>
@@ -749,7 +802,9 @@ async function handlePay() {
               class="w-full rounded border border-gray-300 px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
             >
               <option :value="null">Barchasi</option>
-              <option v-for="s in sectionsForDisplay" :key="s.key" :value="s.key">{{ s.name }}</option>
+              <option v-for="s in sectionsForDisplay" :key="s.key" :value="s.key">
+                {{ s.name }}
+              </option>
             </select>
           </FormField>
           <FormField label="Sana (Rasta holati)">
@@ -805,33 +860,59 @@ async function handlePay() {
 
       <CardBox class="mb-4">
         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-lg border border-slate-200 p-4 text-slate-700 dark:border-slate-700 dark:text-slate-200">
-            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Do'konlar</div>
+          <div
+            class="rounded-lg border border-slate-200 p-4 text-slate-700 dark:border-slate-700 dark:text-slate-200"
+          >
+            <div class="text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
+              Do'konlar
+            </div>
             <div class="text-2xl font-semibold">{{ overallSummary.stores }}</div>
             <div class="text-xs text-slate-500 dark:text-slate-400">Tanlangan bo'limlarda</div>
           </div>
-          <div class="rounded-lg border border-slate-200 p-4 text-slate-700 dark:border-slate-700 dark:text-slate-200">
-            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Band / Bo'sh</div>
+          <div
+            class="rounded-lg border border-slate-200 p-4 text-slate-700 dark:border-slate-700 dark:text-slate-200"
+          >
+            <div class="text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
+              Band / Bo'sh
+            </div>
             <div class="text-2xl font-semibold text-amber-600">{{ overallSummary.storesBusy }}</div>
-            <div class="text-xs text-slate-500 dark:text-slate-400">Bo'sh: {{ overallSummary.storesFree }}</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">
+              Bo'sh: {{ overallSummary.storesFree }}
+            </div>
           </div>
-          <div class="rounded-lg border border-slate-200 p-4 text-slate-700 dark:border-slate-700 dark:text-slate-200">
-            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">To'langan do'konlar</div>
-            <div class="text-2xl font-semibold text-emerald-600">{{ overallSummary.storesPaid }}</div>
-            <div class="text-xs text-slate-500 dark:text-slate-400">Jami: {{ overallSummary.stores }}</div>
+          <div
+            class="rounded-lg border border-slate-200 p-4 text-slate-700 dark:border-slate-700 dark:text-slate-200"
+          >
+            <div class="text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
+              To'langan do'konlar
+            </div>
+            <div class="text-2xl font-semibold text-emerald-600">
+              {{ overallSummary.storesPaid }}
+            </div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">
+              Jami: {{ overallSummary.stores }}
+            </div>
           </div>
-          <div class="rounded-lg border border-slate-200 p-4 text-slate-700 dark:border-slate-700 dark:text-slate-200">
-            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Rastalar</div>
+          <div
+            class="rounded-lg border border-slate-200 p-4 text-slate-700 dark:border-slate-700 dark:text-slate-200"
+          >
+            <div class="text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
+              Rastalar
+            </div>
             <div class="text-2xl font-semibold text-sky-600">{{ overallSummary.stalls }}</div>
             <div class="text-xs text-slate-500 dark:text-slate-400">
-              PAID: {{ overallSummary.stallsPaid }}, UNPAID: {{ overallSummary.stallsUnpaid }}, Yo'q:
+              PAID: {{ overallSummary.stallsPaid }}, UNPAID: {{ overallSummary.stallsUnpaid }},
+              Yo'q:
               {{ overallSummary.stallsNone }}
             </div>
           </div>
         </div>
       </CardBox>
 
-      <div v-if="!loading && !sectionCards.length" class="rounded border border-dashed border-gray-300 p-6 text-center text-gray-500 dark:border-gray-700">
+      <div
+        v-if="!loading && !sectionCards.length"
+        class="rounded border border-dashed border-gray-300 p-6 text-center text-gray-500 dark:border-gray-700"
+      >
         Tanlangan filtr bo'yicha bo'lim topilmadi.
       </div>
       <div v-else class="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -842,12 +923,16 @@ async function handlePay() {
         >
           <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div class="text-lg font-semibold text-slate-800 dark:text-slate-100">{{ card.name }}</div>
-              <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <div class="text-lg font-semibold text-slate-800 dark:text-slate-100">
+                {{ card.name }}
+              </div>
+              <div class="text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
                 ID: {{ card.id ?? '—' }}
               </div>
             </div>
-            <div class="flex flex-wrap gap-2 text-xs font-medium text-slate-600 dark:text-slate-200">
+            <div
+              class="flex flex-wrap gap-2 text-xs font-medium text-slate-600 dark:text-slate-200"
+            >
               <span class="rounded-full border border-slate-200 px-3 py-1 dark:border-slate-600">
                 Do'kon: {{ card.storeList.length }}
               </span>
@@ -858,17 +943,17 @@ async function handlePay() {
           </div>
           <div class="space-y-5">
             <div v-if="typeFilter === 'both' || typeFilter === 'stores'">
-              <div class="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm font-medium text-gray-700 dark:text-gray-200">
+              <div
+                class="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm font-medium text-gray-700 dark:text-gray-200"
+              >
                 <span>Do'konlar ({{ card.stats.store.total }})</span>
                 <span class="text-xs font-normal text-gray-500 dark:text-gray-400">
-                  Bo'sh: {{ card.stats.store.free }} · Band: {{ card.stats.store.busy }} · To'langan: {{ card.stats.store.paid }}
+                  Bo'sh: {{ card.stats.store.free }} · Band: {{ card.stats.store.busy }} ·
+                  To'langan: {{ card.stats.store.paid }}
                 </span>
               </div>
               <div v-if="card.storeList.length" class="overflow-x-auto">
-                <div
-                  class="grid gap-2"
-                  :style="gridStyle(card.storeList.length, storeCellSize)"
-                >
+                <div class="grid gap-2" :style="gridStyle(card.storeList.length, storeCellSize)">
                   <div
                     v-for="s in card.storeList"
                     :key="s.id"
@@ -894,17 +979,17 @@ async function handlePay() {
             </div>
 
             <div v-if="typeFilter === 'both' || typeFilter === 'stalls'">
-              <div class="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm font-medium text-gray-700 dark:text-gray-200">
+              <div
+                class="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm font-medium text-gray-700 dark:text-gray-200"
+              >
                 <span>Rastalar ({{ card.stats.stall.total }})</span>
                 <span class="text-xs font-normal text-gray-500 dark:text-gray-400">
-                  PAID: {{ card.stats.stall.paid }} · UNPAID: {{ card.stats.stall.unpaid }} · Yo'q: {{ card.stats.stall.none }}
+                  PAID: {{ card.stats.stall.paid }} · UNPAID: {{ card.stats.stall.unpaid }} · Yo'q:
+                  {{ card.stats.stall.none }}
                 </span>
               </div>
               <div v-if="card.stallList.length" class="overflow-x-auto">
-                <div
-                  class="grid gap-2"
-                  :style="gridStyle(card.stallList.length, stallCellSize)"
-                >
+                <div class="grid gap-2" :style="gridStyle(card.stallList.length, stallCellSize)">
                   <div
                     v-for="st in card.stallList"
                     :key="st.id"
@@ -957,32 +1042,37 @@ async function handlePay() {
         </div>
         <div class="grid gap-3 sm:grid-cols-2">
           <div>
-            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Bo'lim</div>
+            <div class="text-xs text-gray-500 uppercase dark:text-gray-400">Bo'lim</div>
             <div>{{ activeStallSection?.name || `Bo'lim #${activeStall.sectionId || '-'}` }}</div>
           </div>
           <div>
-            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Maydon</div>
+            <div class="text-xs text-gray-500 uppercase dark:text-gray-400">Maydon</div>
             <div>{{ activeStall.area }} m²</div>
           </div>
           <div>
-            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Sotuv turi</div>
+            <div class="text-xs text-gray-500 uppercase dark:text-gray-400">Sotuv turi</div>
             <div>{{ activeStall.SaleType?.name || '-' }}</div>
           </div>
           <div>
-            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Kunlik to'lov</div>
+            <div class="text-xs text-gray-500 uppercase dark:text-gray-400">Kunlik to'lov</div>
             <div>{{ activeStallDailyFeeDisplay }}</div>
           </div>
           <div>
-            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Bugungi holat</div>
+            <div class="text-xs text-gray-500 uppercase dark:text-gray-400">Bugungi holat</div>
             <div>{{ activeStallAttendance || "Ma'lumot yo'q" }}</div>
           </div>
           <div>
-            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Izoh</div>
+            <div class="text-xs text-gray-500 uppercase dark:text-gray-400">Izoh</div>
             <div>{{ activeStall.description || '-' }}</div>
           </div>
         </div>
         <div class="flex flex-col gap-3 sm:flex-row">
-          <BaseButton label="Davomat kiritish" color="info" class="flex-1" @click="handleMakeAttendance" />
+          <BaseButton
+            label="Davomat kiritish"
+            color="info"
+            class="flex-1"
+            @click="handleMakeAttendance"
+          />
           <BaseButton
             label="To'lov sahifasi"
             :color="canPay ? 'success' : 'warning'"
@@ -1004,7 +1094,12 @@ async function handlePay() {
           Avval {{ date }} sanasi uchun davomat kiriting.
         </p>
         <div class="border-t border-dashed border-gray-200 pt-3 dark:border-gray-700">
-          <BaseButton label="Rastani tahrirlash" color="lightDark" class="w-full" @click="openStallEditModal" />
+          <BaseButton
+            label="Rastani tahrirlash"
+            color="lightDark"
+            class="w-full"
+            @click="openStallEditModal"
+          />
         </div>
       </div>
       <div v-else class="text-sm text-gray-500">Rasta tanlanmagan.</div>
@@ -1027,7 +1122,10 @@ async function handlePay() {
         <p class="text-xs text-gray-500">
           Davomat {{ activeStall?.stallNumber || '' }} rastasi uchun yaratiladi.
         </p>
-        <p v-if="attendanceModalError" class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p
+          v-if="attendanceModalError"
+          class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+        >
           {{ attendanceModalError }}
         </p>
       </div>
@@ -1062,47 +1160,57 @@ async function handlePay() {
           </select>
         </FormField>
         <FormField label="Sotuv turi">
-          <div class="space-y-2">
-            <FormControl v-model="saleTypeSearch" placeholder="Sotuv turini izlash..." />
-            <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-              <span>Tanlangan: {{ selectedSaleTypeName || 'Tanlanmagan' }}</span>
-              <button
-                type="button"
-                class="text-emerald-600 transition hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-emerald-300 dark:hover:text-emerald-200"
-                :disabled="!stallEditForm.saleTypeId"
-                @click.prevent="clearSaleTypeSelection"
+          <div class="relative">
+            <FormControl
+              v-model="saleTypeSearch"
+              placeholder="Sotuv turini qidiring..."
+              @focus="saleTypeDropdownOpen = true"
+              @input="saleTypeDropdownOpen = true"
+              @blur="
+                setTimeout(() => {
+                  saleTypeDropdownOpen = false
+                }, 150)
+              "
+            />
+            <div
+              v-if="saleTypeDropdownOpen"
+              class="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded border border-gray-300 bg-white shadow dark:border-gray-700 dark:bg-gray-900"
+            >
+              <div
+                v-if="stallEditForm.saleTypeId"
+                class="cursor-pointer px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                @mousedown.prevent
+                @click="pickSaleType(null)"
               >
-                Tozalash
-              </button>
-            </div>
-            <div class="max-h-48 overflow-auto rounded border border-gray-200 dark:border-gray-700">
-              <button
+                Tanlovni tozalash
+              </div>
+              <div
                 v-for="st in filteredSaleTypeOptions"
                 :key="st.id"
-                type="button"
-                class="w-full px-3 py-2 text-left text-sm transition"
-                :class="[
-                  stallEditForm.saleTypeId === st.id
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-100'
-                    : 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800/40',
-                ]"
-                @click="selectSaleTypeOption(st)"
+                class="cursor-pointer px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800"
+                @mousedown.prevent
+                @click="pickSaleType(st)"
               >
                 {{ st.name }}
-              </button>
-              <div
-                v-if="!filteredSaleTypeOptions.length"
-                class="px-3 py-2 text-sm text-gray-500 dark:text-gray-300"
-              >
-                Mos keluvchi sotuv turi topilmadi
+              </div>
+              <div v-if="!filteredSaleTypeOptions.length" class="p-2 text-sm text-gray-500">
+                Topilmadi
               </div>
             </div>
           </div>
         </FormField>
         <FormField label="Izoh">
-          <FormControl v-model="stallEditForm.description" type="textarea" rows="3" placeholder="Izoh..." />
+          <FormControl
+            v-model="stallEditForm.description"
+            type="textarea"
+            rows="3"
+            placeholder="Izoh..."
+          />
         </FormField>
-        <p v-if="stallEditModalError" class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p
+          v-if="stallEditModalError"
+          class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+        >
           {{ stallEditModalError }}
         </p>
       </div>
