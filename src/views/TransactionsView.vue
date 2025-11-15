@@ -13,7 +13,7 @@ import { listTransactions } from '@/services/transactions'
 import { listContracts } from '@/services/contracts'
 import { listAttendances } from '@/services/attendances'
 import { summarizeContractDebts, summarizeAttendanceDebts } from '@/utils/debt'
-import { downloadCSV } from '../utils/export'
+import { downloadXLSX } from '../utils/export'
 import {
   formatTashkentDate,
   formatTashkentDateTime,
@@ -152,7 +152,7 @@ function resetFilters() {
   fetchData()
 }
 
-async function exportCSV() {
+async function exportXLSX() {
   loading.value = true
   try {
     const headers = ['ID', 'TransactionID', 'Summasi', 'Holati', 'Usul', 'Manba', 'Sana']
@@ -184,7 +184,7 @@ async function exportCSV() {
       if (arr.length < 100) break
       p++
     }
-    downloadCSV(`transactions_${getTashkentTodayISO()}.csv`, headers, rows)
+    downloadXLSX(`transactions_${getTashkentTodayISO()}.xlsx`, headers, rows, 'Transactions')
   } finally {
     loading.value = false
   }
@@ -426,7 +426,7 @@ onMounted(async () => {
 
           <template #actions>
             <BaseButton outline color="info" label="Filtrlarni tozalash" @click="resetFilters" />
-            <BaseButton color="info" :disabled="loading" label="Eksport CSV" @click="exportCSV" />
+            <BaseButton color="info" :disabled="loading" label="XLSX eksport" @click="exportXLSX" />
           </template>
         </FilterToolbar>
       </CardBox>
