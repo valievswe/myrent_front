@@ -475,9 +475,7 @@ onMounted(async () => {
           <div class="p-4">
             <div class="text-xs text-gray-500">Faol shartnomalar</div>
             <div class="text-2xl font-semibold">{{ contractSummary.total }}</div>
-            <div class="text-xs text-gray-400">
-              Oylik majburiyat: 2 {{ contractSummary.monthly }}
-            </div>
+            <div class="text-xs text-gray-400">Oylik majburiyat: {{ contractSummary.monthly }}</div>
           </div>
         </CardBox>
         <CardBox>
