@@ -24,3 +24,15 @@ export async function deleteContract(id) {
   const { data } = await http.delete(`/contracts/${id}`)
   return data
 }
+
+export async function refreshContract(id) {
+  const { data } = await http.get(`/contracts/${id}/refresh`)
+  return data
+}
+
+export async function getContractHistory(id, { limit = 30 } = {}) {
+  const params = {}
+  if (limit) params.limit = limit
+  const { data } = await http.get(`/contracts/${id}/history`, { params })
+  return data
+}

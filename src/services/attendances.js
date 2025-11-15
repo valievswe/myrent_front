@@ -24,3 +24,15 @@ export async function getAttendancePayUrl(id, type = 'click') {
   const { data } = await http.get(`/attendances/${id}/pay/?type=${type}`)
   return data
 }
+
+export async function refreshAttendance(id) {
+  const { data } = await http.get(`/attendances/${id}/refresh`)
+  return data
+}
+
+export async function getAttendanceHistory(id, { days = 30 } = {}) {
+  const params = {}
+  if (days) params.days = days
+  const { data } = await http.get(`/attendances/${id}/history`, { params })
+  return data
+}

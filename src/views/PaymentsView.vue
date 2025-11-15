@@ -1,17 +1,19 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { mdiRefresh, mdiHistory, mdiFileExcelBox } from '@mdi/js'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
 import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
+import CardBoxModal from '@/components/CardBoxModal.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import FilterToolbar from '@/components/FilterToolbar.vue'
 import { listContracts } from '@/services/contracts'
-import { listAttendances, getAttendancePayUrl } from '@/services/attendances'
+import { listAttendances, getAttendancePayUrl, refreshAttendance, getAttendanceHistory } from '@/services/attendances'
 import { listSections } from '@/services/sections'
-import { downloadCSV } from '../utils/export'
+import { downloadCSV, downloadXLSX } from '../utils/export'
 import { isContractActive } from '@/utils/contracts'
 import {
   formatTashkentDate,
@@ -37,6 +39,16 @@ const attendanceDate = ref(getTashkentTodayISO())
 const attendanceStatus = ref('pending')
 const attendanceItems = ref([])
 const sections = ref([])
+const attendanceRefreshState = ref({})
+const attendanceHistoryModal = ref({
+  open: false,
+  stallId: null,
+  loading: false,
+  days: 30,
+  items: [],
+  total: 0,
+})
+const attendanceHistoryError = ref('')
 
 function contractPaymentStatus(contract) {
   const tx = (contract.transactions || [])
@@ -146,6 +158,24 @@ const attendanceSummary = computed(() => {
   return summary
 })
 
+const attendanceHistorySummary = computed(() => {
+  const items = attendanceHistoryModal.value.items || []
+  return items.reduce(
+    (acc, item) => {
+      const numeric = Number(item.amount || 0)
+      if (item.status === 'PAID') {
+        acc.paid++
+        acc.amountPaid += numeric
+      } else {
+        acc.unpaid++
+        acc.amountUnpaid += numeric
+      }
+      return acc
+    },
+    { paid: 0, unpaid: 0, amountPaid: 0, amountUnpaid: 0 },
+  )
+})
+
 async function fetchContracts() {
   contractLoading.value = true
   contractError.value = ''
@@ -231,12 +261,68 @@ async function preloadSections() {
 
 async function openPayLink(attendance) {
   try {
-    const { url } = await getAttendancePayUrl(attendance.id, )
+    const { url } = await getAttendancePayUrl(attendance.id)
     if (url) window.open(url, '_blank', 'noopener')
   } catch (e) {
     console.error(e)
     alert("To'lov havolasini olishda xatolik")
   }
+}
+
+function updateAttendanceInList(updated) {
+  const idx = attendanceItems.value.findIndex((item) => item.id === updated.id)
+  if (idx !== -1) {
+    attendanceItems.value[idx] = updated
+  }
+}
+
+async function refreshSingleAttendance(attendance) {
+  if (!attendance?.id) return
+  if (attendanceRefreshState.value[attendance.id]) return
+  attendanceRefreshState.value = { ...attendanceRefreshState.value, [attendance.id]: true }
+  try {
+    const fresh = await refreshAttendance(attendance.id)
+    if (fresh) updateAttendanceInList(fresh)
+  } catch (e) {
+    console.error(e)
+    alert("Statusni yangilashda xatolik")
+  } finally {
+    const clone = { ...attendanceRefreshState.value }
+    delete clone[attendance.id]
+    attendanceRefreshState.value = clone
+  }
+}
+
+async function openAttendanceHistory(attendance) {
+  if (!attendance?.id) return
+  attendanceHistoryModal.value.open = true
+  attendanceHistoryModal.value.loading = true
+  attendanceHistoryModal.value.stallId = attendance.stallId
+  attendanceHistoryError.value = ''
+  try {
+    const history = await getAttendanceHistory(attendance.id, { days: attendanceHistoryModal.value.days })
+    attendanceHistoryModal.value.items = history.items || []
+    attendanceHistoryModal.value.total = history.total || history.items?.length || 0
+    attendanceHistoryModal.value.days = history.days || attendanceHistoryModal.value.days
+  } catch (e) {
+    attendanceHistoryError.value = e?.response?.data?.message || 'Tarixni yuklashda xatolik'
+    attendanceHistoryModal.value.items = []
+  } finally {
+    attendanceHistoryModal.value.loading = false
+  }
+}
+
+function downloadAttendanceHistory() {
+  const items = attendanceHistoryModal.value.items || []
+  if (!items.length) return
+  const headers = ["Sana", "Rasta", "Holati", "Summasi"]
+  const rows = items.map((item) => [
+    formatTashkentDate(item.date) || '',
+    item.stallId,
+    item.status,
+    item.amount ?? '',
+  ])
+  downloadXLSX(`stall_${attendanceHistoryModal.value.stallId}_history.xlsx`, headers, rows, 'History')
 }
 
 function sectionNameForAttendance(a) {
@@ -494,13 +580,30 @@ onMounted(async () => {
                 </td>
                 <td class="px-4 py-2">{{ formatTashkentDate(a.date) || '-' }}</td>
                 <td class="px-4 py-2 text-right">
-                  <BaseButton
-                    v-if="a.status === 'UNPAID'"
-                    color="success"
-                    small
-                    label="To'lov havolasi"
-                    @click="openPayLink(a)"
-                  />
+                  <div class="flex flex-wrap justify-end gap-2">
+                    <BaseButton
+                      small
+                      outline
+                      :icon="mdiRefresh"
+                      :disabled="attendanceRefreshState[a.id] || attendanceLoading"
+                      title="Statusni yangilash"
+                      @click="refreshSingleAttendance(a)"
+                    />
+                    <BaseButton
+                      small
+                      outline
+                      :icon="mdiHistory"
+                      label="Tarix"
+                      @click="openAttendanceHistory(a)"
+                    />
+                    <BaseButton
+                      v-if="a.status === 'UNPAID'"
+                      color="success"
+                      small
+                      label="To'lov havolasi"
+                      @click="openPayLink(a)"
+                    />
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -513,6 +616,76 @@ onMounted(async () => {
           </div>
         </div>
       </CardBox>
+
+      <CardBoxModal
+        v-model="attendanceHistoryModal.open"
+        button="info"
+        button-label="Yopish"
+        :confirm-disabled="attendanceHistoryModal.loading"
+        :has-cancel="false"
+        :title="`Rasta #${attendanceHistoryModal.stallId || ''} — oxirgi ${attendanceHistoryModal.days} kun`"
+      >
+        <template v-if="attendanceHistoryError">
+          <div class="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {{ attendanceHistoryError }}
+          </div>
+        </template>
+        <template v-else>
+          <div class="flex flex-wrap items-center gap-3 text-sm">
+            <div class="rounded-lg bg-green-50 px-3 py-2 text-green-700">
+              To'langan: {{ attendanceHistorySummary.paid }} ta —
+              {{ attendanceHistorySummary.amountPaid.toLocaleString('ru-RU') }} so'm
+            </div>
+            <div class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700">
+              To'lanmagan: {{ attendanceHistorySummary.unpaid }} ta —
+              {{ attendanceHistorySummary.amountUnpaid.toLocaleString('ru-RU') }} so'm
+            </div>
+            <BaseButton
+              :icon="mdiFileExcelBox"
+              label="XLSX"
+              small
+              outline
+              :disabled="attendanceHistoryModal.loading || !attendanceHistoryModal.items.length"
+              @click="downloadAttendanceHistory"
+            />
+          </div>
+          <div v-if="attendanceHistoryModal.loading" class="py-6 text-center text-sm text-gray-500">
+            Yuklanmoqda...
+          </div>
+          <div v-else class="overflow-x-auto">
+            <table class="mt-4 w-full text-sm">
+              <thead>
+                <tr>
+                  <th class="px-2 py-1 text-left">Sana</th>
+                  <th class="px-2 py-1 text-left">Holati</th>
+                  <th class="px-2 py-1 text-left">Summasi</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!attendanceHistoryModal.items.length">
+                  <td colspan="3" class="px-2 py-4 text-center text-gray-500">Tarix topilmadi</td>
+                </tr>
+                <tr v-for="item in attendanceHistoryModal.items" :key="item.id">
+                  <td class="px-2 py-1">{{ formatTashkentDate(item.date) || '-' }}</td>
+                  <td class="px-2 py-1">
+                    <span
+                      :class="[
+                        'rounded-full px-2 py-0.5 text-xs font-semibold',
+                        item.status === 'PAID'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-amber-100 text-amber-700',
+                      ]"
+                    >
+                      {{ item.status }}
+                    </span>
+                  </td>
+                  <td class="px-2 py-1">{{ item.amount ?? '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+      </CardBoxModal>
     </SectionMain>
   </LayoutAuthenticated>
 </template>

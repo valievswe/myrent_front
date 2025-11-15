@@ -1,5 +1,7 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
+import { mdiRefresh, mdiQrcode, mdiHistory, mdiFileExcelBox } from '@mdi/js'
+import QRCode from 'qrcode'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
@@ -8,10 +10,11 @@ import BaseButton from '@/components/BaseButton.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
-import { listContracts, createContract, updateContract, deleteContract } from '@/services/contracts'
+import PaginationControls from '@/components/PaginationControls.vue'
+import { listContracts, createContract, updateContract, deleteContract, refreshContract, getContractHistory } from '@/services/contracts'
 import { listOwners } from '@/services/owners'
 import { listStores } from '@/services/stores'
-import { downloadCSV } from '../utils/export'
+import { downloadCSV, downloadXLSX } from '../utils/export'
 import {
   formatTashkentDate,
   formatTashkentDateISO,
@@ -35,6 +38,25 @@ const storeSearch = ref('')
 const ownerOptions = ref([])
 const storeOptions = ref([])
 const storeInfoMsg = ref('')
+const contractHistoryModal = ref({
+  open: false,
+  contractId: null,
+  loading: false,
+  limit: 30,
+  items: [],
+  total: 0,
+})
+const contractHistoryError = ref('')
+const qrModal = ref({
+  open: false,
+  contractId: null,
+  loading: false,
+  provider: null,
+  link: '',
+  qrData: '',
+  options: [],
+})
+const refreshingContractId = ref(null)
 
 const SEARCH_MIN_LENGTH = 2
 const searchTerm = ref('')
@@ -105,7 +127,39 @@ function getPaymentUrl(contract) {
   return store.payme_payment_url || store.click_payment_url || ''
 }
 
+function getPaymentLinks(contract) {
+  const store = resolveStore(contract)
+  if (!store) return []
+  const links = [
+    { type: 'click', label: 'Click', url: store.click_payment_url || '' },
+    { type: 'payme', label: 'Payme', url: store.payme_payment_url || '' },
+  ]
+  return links.filter((link) => link.url)
+}
+
+function currentMonthWindow() {
+  const today = startOfTashkentDay() || new Date()
+  const start = new Date(today.getFullYear(), today.getMonth(), 1)
+  const end = new Date(start)
+  end.setMonth(end.getMonth() + 1)
+  return { start, end }
+}
+
+function contractPaidThisMonth(contract) {
+  const window = currentMonthWindow()
+  return (contract.transactions || []).some((tx) => {
+    if (tx.status !== 'PAID' || !tx.createdAt) return false
+    const date = parseTashkentDate(tx.createdAt)
+    if (!date) return false
+    return date >= window.start && date < window.end
+  })
+}
+
 function handleContractPayment(contract) {
+  if (contractPaidThisMonth(contract)) {
+    alert("Bu oy uchun to'lov allaqachon amalga oshirilgan")
+    return
+  }
   const url = getPaymentUrl(contract)
   if (!url) {
     alert("To'lov havolasi topilmadi")
@@ -215,6 +269,10 @@ function openCreate() {
 }
 
 function openEdit(it) {
+  if (contractPaidThisMonth(it)) {
+    alert("Bu oy to'lov qilinganligi uchun tahrirlash vaqtincha bloklangan")
+    return
+  }
   editingId.value = it.id
   form.value = {
     ownerId: it.ownerId ?? null,
@@ -284,6 +342,118 @@ async function restoreItem(id) {
   }
 }
 
+function replaceContractInstance(updated) {
+  const idx = items.value.findIndex((it) => it.id === updated.id)
+  if (idx !== -1) items.value[idx] = updated
+  if (Array.isArray(searchResults.value)) {
+    const sIdx = searchResults.value.findIndex((it) => it.id === updated.id)
+    if (sIdx !== -1) searchResults.value[sIdx] = updated
+  }
+}
+
+async function refreshSingleContract(contract) {
+  if (!contract?.id) return
+  refreshingContractId.value = contract.id
+  try {
+    const fresh = await refreshContract(contract.id)
+    if (fresh) replaceContractInstance(fresh)
+  } catch (e) {
+    console.error(e)
+    alert("Shartnoma holatini yangilashda xatolik")
+  } finally {
+    refreshingContractId.value = null
+  }
+}
+
+async function openContractHistory(contract) {
+  contractHistoryModal.value.open = true
+  contractHistoryModal.value.loading = true
+  contractHistoryModal.value.contractId = contract.id
+  contractHistoryError.value = ''
+  try {
+    const history = await getContractHistory(contract.id, { limit: contractHistoryModal.value.limit })
+    contractHistoryModal.value.items = history.transactions || []
+    contractHistoryModal.value.total = history.total || history.transactions?.length || 0
+  } catch (e) {
+    contractHistoryError.value = e?.response?.data?.message || 'Tarixni yuklashda xatolik'
+    contractHistoryModal.value.items = []
+  } finally {
+    contractHistoryModal.value.loading = false
+  }
+}
+
+const contractHistorySummary = computed(() => {
+  const items = contractHistoryModal.value.items || []
+  return items.reduce(
+    (acc, tx) => {
+      const numeric = Number((tx.amount && tx.amount.toString()) || 0)
+      if (tx.status === 'PAID') {
+        acc.paid++
+        acc.amountPaid += numeric
+      } else {
+        acc.pending++
+      }
+      return acc
+    },
+    { paid: 0, pending: 0, amountPaid: 0 },
+  )
+})
+
+function downloadContractHistory() {
+  const items = contractHistoryModal.value.items || []
+  if (!items.length) return
+  const headers = ["Sana", "Summasi", "Holat", "To'lov ID"]
+  const rows = items.map((tx) => [
+    formatTashkentDate(tx.createdAt) || '',
+    tx.amount ?? '',
+    tx.status,
+    tx.transactionId || tx.id,
+  ])
+  downloadXLSX(`contract_${contractHistoryModal.value.contractId}_history.xlsx`, headers, rows, 'Tarix')
+}
+
+async function openQrCode(contract, provider) {
+  const options = getPaymentLinks(contract)
+  if (!options.length) {
+    alert("To'lov havolasi topilmadi")
+    return
+  }
+  const selected = provider ? options.find((opt) => opt.type === provider) || options[0] : options[0]
+  qrModal.value.open = true
+  qrModal.value.loading = true
+  qrModal.value.contractId = contract.id
+  qrModal.value.provider = selected.type
+  qrModal.value.link = selected.url
+  qrModal.value.options = options
+  qrModal.value.qrData = ''
+  try {
+    const dataUrl = await QRCode.toDataURL(selected.url, { width: 320, margin: 1 })
+    qrModal.value.qrData = dataUrl
+  } catch (e) {
+    console.error(e)
+    alert('QR kod yaratishda xatolik')
+  } finally {
+    qrModal.value.loading = false
+  }
+}
+
+async function selectQrProvider(type) {
+  const option = qrModal.value.options.find((opt) => opt.type === type)
+  if (!option) return
+  qrModal.value.loading = true
+  qrModal.value.provider = type
+  qrModal.value.link = option.url
+  try {
+    const dataUrl = await QRCode.toDataURL(option.url, { width: 320, margin: 1 })
+    qrModal.value.qrData = dataUrl
+  } catch (e) {
+    console.error(e)
+    alert('QR kod yaratishda xatolik')
+  } finally {
+    qrModal.value.loading = false
+  }
+}
+
 onMounted(async () => {
   await preloadRefs()
   await fetchData()
@@ -296,6 +466,19 @@ watch(statusFilter, async () => {
   if (searchActive.value) await runSearch()
   else await fetchData()
 })
+
+function handlePageChange(newPage) {
+  if (loading.value || page.value === newPage) return
+  page.value = newPage
+  fetchData()
+}
+
+function handleLimitChange(newLimit) {
+  if (loading.value || limit.value === newLimit) return
+  limit.value = newLimit
+  page.value = 1
+  fetchData()
+}
 
 
 function isStoreOccupied(s) {
@@ -530,6 +713,9 @@ async function exportContractTransactionsCSV() {
                     <span :class="(it.transactions || []).some(t => t.status === 'PAID') ? 'text-green-600' : 'text-red-600'">
                       {{ (it.transactions || []).some(t => t.status === 'PAID') ? "To'langan" : 'Kutilmoqda' }}
                     </span>
+                    <div v-if="contractPaidThisMonth(it)" class="text-xs text-emerald-600">
+                      Bu oy to'langan
+                    </div>
                   </td>
                   <td class="px-4 py-2">
                     <div class="flex flex-wrap justify-end gap-2">
@@ -538,16 +724,39 @@ async function exportContractTransactionsCSV() {
                         small
                         outline
                         label="To'lov"
-                        :disabled="!getPaymentUrl(it) || !it.isActive"
+                        :disabled="!getPaymentUrl(it) || !it.isActive || contractPaidThisMonth(it)"
                         @click="handleContractPayment(it)"
                       />
-                      <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
+                      <BaseButton
+                        color="info"
+                        small
+                        label="Tahrirlash"
+                        :disabled="contractPaidThisMonth(it)"
+                        @click="openEdit(it)"
+                      />
+                      <BaseButton
+                        small
+                        outline
+                        :icon="mdiRefresh"
+                        title="Holatni yangilash"
+                        :disabled="refreshingContractId === it.id || loading"
+                        @click="refreshSingleContract(it)"
+                      />
                       <BaseButton
                         color="info"
                         small
                         outline
                         label="Tarix"
-                        @click="it._showHistory = !it._showHistory"
+                        :icon="mdiHistory"
+                        @click="openContractHistory(it)"
+                      />
+                      <BaseButton
+                        small
+                        outline
+                        :icon="mdiQrcode"
+                        label="QR"
+                        :disabled="!getPaymentLinks(it).length"
+                        @click="openQrCode(it)"
                       />
                       <template v-if="it.isActive">
                         <BaseButton
@@ -570,65 +779,123 @@ async function exportContractTransactionsCSV() {
                     </div>
                   </td>
                 </tr>
-                <tr v-if="it._showHistory" class="bg-gray-50 dark:bg-gray-800/50">
-                  <td colspan="8" class="px-4 py-2">
-                    <div class="text-sm font-medium mb-2">To'lov tarixi</div>
-                    <div v-if="!(it.transactions || []).length" class="text-xs text-gray-500">Tarix yo'q</div>
-                    <div v-else class="overflow-x-auto">
-                      <table class="w-full text-sm">
-                        <thead>
-                          <tr>
-                            <th class="px-2 py-1 text-left">Sana</th>
-                            <th class="px-2 py-1 text-left">Summasi</th>
-                            <th class="px-2 py-1 text-left">Holat</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr
-                            v-for="t in (it.transactions || [])
-                              .slice()
-                              .sort(
-                                (a, b) =>
-                                  (parseTashkentDate(b.createdAt)?.getTime() || 0) -
-                                  (parseTashkentDate(a.createdAt)?.getTime() || 0),
-                              )"
-                            :key="t.id"
-                          >
-                            <td class="px-2 py-1">{{ formatTashkentDate(t.createdAt) || '-' }}</td>
-                            <td class="px-2 py-1">{{ t.amount }}</td>
-                            <td class="px-2 py-1">
-                              <span :class="t.status === 'PAID' ? 'text-green-600' : 'text-red-600'">{{ t.status }}</span>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </td>
-                </tr>
               </template>
             </tbody>
           </table>
         </div>
-        <div class="flex items-center justify-between px-4 py-3">
-          <div>Jami: {{ displayTotal }}</div>
-          <div v-if="searchActive" class="text-sm text-gray-600 dark:text-gray-300">
-            Qidiruv natijalari ko'rsatilmoqda
-          </div>
-          <div v-else class="flex items-center gap-2">
-            <BaseButton
-              :disabled="page <= 1 || loading"
-              label="Oldingi"
-              @click="(page--, fetchData())"
-            />
-            <span>Sahifa {{ page }}</span>
-            <BaseButton
-              :disabled="items.length < limit || loading"
-              label="Keyingi"
-              @click="(page++, fetchData())"
-            />
-          </div>
+        <PaginationControls
+          v-if="!searchActive"
+          :page="page"
+          :limit="limit"
+          :total="displayTotal"
+          :disabled="loading"
+          @update:page="handlePageChange"
+          @update:limit="handleLimitChange"
+        />
+        <div v-else class="border-t border-gray-100 px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-300">
+          Qidiruv natijalari ko'rsatilmoqda ({{ displayTotal }})
         </div>
       </CardBox>
+
+      <CardBoxModal
+        v-model="contractHistoryModal.open"
+        button="info"
+        button-label="Yopish"
+        :confirm-disabled="contractHistoryModal.loading"
+        :has-cancel="false"
+        :title="`Shartnoma #${contractHistoryModal.contractId || ''} — so'nggi to'lovlar`"
+      >
+        <template v-if="contractHistoryError">
+          <div class="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {{ contractHistoryError }}
+          </div>
+        </template>
+        <template v-else>
+          <div class="flex flex-wrap items-center gap-3 text-sm">
+            <div class="rounded-lg bg-green-50 px-3 py-2 text-green-700">
+              To'langan: {{ contractHistorySummary.paid }} ta —
+              {{ contractHistorySummary.amountPaid.toLocaleString('ru-RU') }} so'm
+            </div>
+            <div class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700">
+              Kutilmoqda: {{ contractHistorySummary.pending }} ta
+            </div>
+            <BaseButton
+              small
+              outline
+              :icon="mdiFileExcelBox"
+              label="XLSX"
+              :disabled="contractHistoryModal.loading || !contractHistoryModal.items.length"
+              @click="downloadContractHistory"
+            />
+          </div>
+          <div v-if="contractHistoryModal.loading" class="py-6 text-center text-sm text-gray-500">
+            Yuklanmoqda...
+          </div>
+          <div v-else class="overflow-x-auto">
+            <table class="mt-4 w-full text-sm">
+              <thead>
+                <tr>
+                  <th class="px-2 py-1 text-left">Sana</th>
+                  <th class="px-2 py-1 text-left">Summasi</th>
+                  <th class="px-2 py-1 text-left">Holat</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!contractHistoryModal.items.length">
+                  <td colspan="3" class="px-2 py-4 text-center text-gray-500">Tarix topilmadi</td>
+                </tr>
+                <tr v-for="tx in contractHistoryModal.items" :key="tx.id">
+                  <td class="px-2 py-1">{{ formatTashkentDate(tx.createdAt) || '-' }}</td>
+                  <td class="px-2 py-1">{{ tx.amount ?? '-' }}</td>
+                  <td class="px-2 py-1">
+                    <span :class="tx.status === 'PAID' ? 'text-green-600' : 'text-amber-600'">
+                      {{ tx.status }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+      </CardBoxModal>
+
+      <CardBoxModal
+        v-model="qrModal.open"
+        button="info"
+        button-label="Yopish"
+        :confirm-disabled="qrModal.loading"
+        :has-cancel="false"
+        title="QR orqali to'lov"
+      >
+        <template v-if="!qrModal.options.length">
+          <div class="text-sm text-gray-500">To'lov havolasi topilmadi</div>
+        </template>
+        <template v-else>
+          <div class="flex flex-wrap gap-2">
+            <BaseButton
+              v-for="option in qrModal.options"
+              :key="option.type"
+              :label="option.label"
+              :color="qrModal.provider === option.type ? 'success' : 'info'"
+              small
+              outline
+              @click="selectQrProvider(option.type)"
+            />
+          </div>
+          <div v-if="qrModal.loading" class="py-6 text-center text-sm text-gray-500">QR tayyorlanmoqda...</div>
+          <div v-else class="flex flex-col items-center gap-3 pt-4">
+            <img v-if="qrModal.qrData" :src="qrModal.qrData" alt="QR Code" class="h-48 w-48 rounded-lg border border-gray-200 p-2" />
+            <div class="break-all text-center text-xs text-gray-600">{{ qrModal.link }}</div>
+            <BaseButton
+              color="success"
+              small
+              label="Havolani ochish"
+              :href="qrModal.link"
+              target="_blank"
+            />
+          </div>
+        </template>
+      </CardBoxModal>
 
       <CardBoxModal
         v-model="showForm"

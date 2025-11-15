@@ -47,6 +47,26 @@ const stallDebtSummary = ref({
 const debtLoading = ref(false)
 const debtError = ref('')
 
+const numberFormatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 })
+const dateFormatter = new Intl.DateTimeFormat('uz-UZ', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+})
+const monthFormatter = new Intl.DateTimeFormat('uz-UZ', {
+  month: 'long',
+  year: 'numeric',
+})
+
+const todayLabel = computed(() => dateFormatter.format(new Date()))
+const currentMonthLabel = computed(() => monthFormatter.format(new Date()))
+
+function formatCount(value) {
+  const numeric = Number(value || 0)
+  return numberFormatter.format(Number.isFinite(numeric) ? numeric : 0)
+}
+
 function daysInMonth(year, monthIndex) {
   return new Date(year, monthIndex + 1, 0).getDate()
 }
@@ -133,7 +153,8 @@ async function loadDetailedData() {
 }
 
 function formatAmount(value) {
-  return Number(value || 0).toLocaleString('ru-RU')
+  const numeric = Number(value || 0)
+  return numberFormatter.format(Number.isFinite(numeric) ? numeric : 0)
 }
 
 const chartData = computed(() => {
@@ -142,23 +163,105 @@ const chartData = computed(() => {
     datasets: [
       {
         label: 'Rastalar',
-        fill: false,
-        borderColor: '#FF3860',
-        pointBackgroundColor: '#FF3860',
+        fill: true,
+        borderColor: '#fb7185',
+        pointBackgroundColor: '#fb7185',
+        backgroundColor: 'rgba(251,113,133,0.15)',
+        borderWidth: 3,
+        pointRadius: 2,
         data: stallsDaily.value,
         tension: 0.3,
       },
       {
         label: "Do'konlar",
-        fill: false,
-        borderColor: '#209CEE',
-        pointBackgroundColor: '#209CEE',
+        fill: true,
+        borderColor: '#38bdf8',
+        pointBackgroundColor: '#38bdf8',
+        backgroundColor: 'rgba(56,189,248,0.15)',
+        borderWidth: 3,
+        pointRadius: 2,
         data: storesDaily.value,
         tension: 0.3,
       },
     ],
   }
 })
+
+const chartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { intersect: false, mode: 'index' },
+  plugins: {
+    legend: {
+      display: true,
+      position: 'bottom',
+      labels: { usePointStyle: true },
+    },
+    tooltip: {
+      callbacks: {
+        label(context) {
+          const value = context.parsed.y ?? context.parsed
+          return `${context.dataset.label}: ${formatAmount(value)} so'm`
+        },
+      },
+    },
+  },
+  scales: {
+    y: {
+      grid: { color: 'rgba(148,163,184,0.2)' },
+      ticks: {
+        callback(value) {
+          return formatAmount(value)
+        },
+      },
+    },
+    x: {
+      grid: { display: false },
+    },
+  },
+}))
+
+const dailyCards = computed(() => [
+  {
+    title: "Bugun (Jami)",
+    revenue: formatAmount(dailyAll.value.revenue),
+    count: formatCount(dailyAll.value.count),
+    accent: 'from-slate-100 to-slate-50',
+  },
+  {
+    title: "Bugun (Rastalar)",
+    revenue: formatAmount(dailyStalls.value.revenue),
+    count: formatCount(dailyStalls.value.count),
+    accent: 'from-orange-50 to-amber-50',
+  },
+  {
+    title: "Bugun (Do'konlar)",
+    revenue: formatAmount(dailyStores.value.revenue),
+    count: formatCount(dailyStores.value.count),
+    accent: 'from-sky-50 to-blue-50',
+  },
+])
+
+const monthlyCards = computed(() => [
+  {
+    title: "Joriy oy (Jami)",
+    revenue: formatAmount(monthRevenueAll.value.revenue),
+    count: formatCount(monthlyAll.value.count),
+    accent: 'from-slate-100 to-slate-50',
+  },
+  {
+    title: "Joriy oy (Rastalar)",
+    revenue: formatAmount(monthRevenueStalls.value.revenue),
+    count: formatCount(monthlyStalls.value.count),
+    accent: 'from-orange-50 to-amber-50',
+  },
+  {
+    title: "Joriy oy (Do'konlar)",
+    revenue: formatAmount(monthRevenueStores.value.revenue),
+    count: formatCount(monthlyStores.value.count),
+    accent: 'from-sky-50 to-blue-50',
+  },
+])
 
 async function fetchStats() {
   loading.value = true
@@ -198,62 +301,54 @@ onMounted(async () => {
         {{ debtError }}
       </div>
 
-      <div class="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <CardBox>
-          <div class="p-6">
-            <div class="text-sm text-gray-500">Bugun (Jami)</div>
-            <div class="mt-1 text-3xl font-semibold md:text-4xl">{{ dailyAll.revenue }}</div>
-            <div class="text-xs text-gray-500">Tranzaksiyalar: {{ dailyAll.count }}</div>
+      <div class="mb-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 text-white shadow-lg">
+        <div class="text-xs uppercase tracking-wide text-white/70">Bugungi holat</div>
+        <div class="mt-2 text-3xl font-semibold md:text-4xl">{{ todayLabel }}</div>
+        <div class="mt-6 grid gap-4 md:grid-cols-2">
+          <div class="rounded-xl bg-white/10 p-4 backdrop-blur">
+            <div class="text-sm text-white/70">To'langan rastalar</div>
+            <div class="mt-3 text-4xl font-bold md:text-5xl">{{ formatCount(dailyStalls.count) }}</div>
+            <div class="text-xs text-white/60">Jami tushum: {{ formatAmount(dailyStalls.revenue) }} so'm</div>
           </div>
-        </CardBox>
-        <CardBox>
-          <div class="p-6">
-            <div class="text-sm text-gray-500">Bugun (Rastalar)</div>
-            <div class="mt-1 text-3xl font-semibold md:text-4xl">{{ dailyStalls.revenue }}</div>
-            <div class="text-xs text-gray-500">Tranzaksiyalar: {{ dailyStalls.count }}</div>
+          <div class="rounded-xl bg-white/10 p-4 backdrop-blur">
+            <div class="text-sm text-white/70">To'langan do'konlar</div>
+            <div class="mt-3 text-4xl font-bold md:text-5xl">{{ formatCount(dailyStores.count) }}</div>
+            <div class="text-xs text-white/60">Jami tushum: {{ formatAmount(dailyStores.revenue) }} so'm</div>
           </div>
-        </CardBox>
-        <CardBox>
-          <div class="p-6">
-            <div class="text-sm text-gray-500">Bugun (Do'konlar)</div>
-            <div class="mt-1 text-3xl font-semibold md:text-4xl">{{ dailyStores.revenue }}</div>
-            <div class="text-xs text-gray-500">Tranzaksiyalar: {{ dailyStores.count }}</div>
+        </div>
+      </div>
+
+      <div class="mb-6 grid gap-4 md:grid-cols-3">
+        <CardBox v-for="card in dailyCards" :key="card.title">
+          <div class="rounded-xl bg-gradient-to-r p-5" :class="card.accent">
+            <div class="text-sm font-medium text-gray-500">{{ card.title }}</div>
+            <div class="mt-2 text-3xl font-semibold md:text-4xl">{{ card.revenue }}</div>
+            <div class="text-xs text-gray-500">Tranzaksiyalar: {{ card.count }}</div>
           </div>
         </CardBox>
       </div>
 
-      <div class="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <CardBox>
-          <div class="p-6">
-            <div class="text-sm text-gray-500">Joriy oy (Jami)</div>
-            <div class="mt-1 text-3xl font-semibold md:text-4xl">{{ monthRevenueAll.revenue }}</div>
-            <div class="text-xs text-gray-500">Tranzaksiyalar: {{ monthlyAll.count }}</div>
-          </div>
-        </CardBox>
-        <CardBox>
-          <div class="p-6">
-            <div class="text-sm text-gray-500">Joriy oy (Rastalar)</div>
-            <div class="mt-1 text-3xl font-semibold md:text-4xl">{{ monthRevenueStalls.revenue }}</div>
-            <div class="text-xs text-gray-500">Tranzaksiyalar: {{ monthlyStalls.count }}</div>
-          </div>
-        </CardBox>
-        <CardBox>
-          <div class="p-6">
-            <div class="text-sm text-gray-500">Joriy oy (Do'konlar)</div>
-            <div class="mt-1 text-3xl font-semibold md:text-4xl">{{ monthRevenueStores.revenue }}</div>
-            <div class="text-xs text-gray-500">Tranzaksiyalar: {{ monthlyStores.count }}</div>
+      <div class="mb-6 grid gap-4 md:grid-cols-3">
+        <CardBox v-for="card in monthlyCards" :key="card.title">
+          <div class="rounded-xl bg-gradient-to-r p-5" :class="card.accent">
+            <div class="flex items-center justify-between text-sm font-medium text-gray-500">
+              <span>{{ card.title }}</span>
+              <span class="text-xs uppercase text-gray-400">{{ currentMonthLabel }}</span>
+            </div>
+            <div class="mt-2 text-3xl font-semibold md:text-4xl">{{ card.revenue }}</div>
+            <div class="text-xs text-gray-500">Tranzaksiyalar: {{ card.count }}</div>
           </div>
         </CardBox>
       </div>
 
       <CardBox class="mb-6">
-        <div class="flex flex-col gap-6 p-6 md:flex-row md:items-start md:justify-between">
-          <div class="flex-1">
+        <div class="grid gap-6 p-6 md:grid-cols-3">
+          <div class="space-y-2">
             <div class="text-xs uppercase tracking-wide text-gray-500">Do'kon shartnomalari</div>
-            <div class="mt-1 text-3xl font-semibold text-red-600 md:text-4xl">
+            <div class="text-3xl font-semibold text-red-600 md:text-4xl">
               {{ formatAmount(contractDebtSummary.debt) }}
             </div>
-            <div class="mt-1 text-xs text-gray-500">
+            <div class="text-xs text-gray-500">
               Majburiyat: {{ formatAmount(contractDebtSummary.expected) }} —
               To'langan: {{ formatAmount(contractDebtSummary.paid) }}
             </div>
@@ -261,12 +356,12 @@ onMounted(async () => {
               Qarzdor shartnomalar: {{ contractDebtSummary.contractsWithDebt }} / {{ contractDebtSummary.totalContracts }}
             </div>
           </div>
-          <div class="flex-1">
+          <div class="space-y-2">
             <div class="text-xs uppercase tracking-wide text-gray-500">Rasta yig'imlari</div>
-            <div class="mt-1 text-3xl font-semibold text-red-600 md:text-4xl">
+            <div class="text-3xl font-semibold text-red-600 md:text-4xl">
               {{ formatAmount(stallDebtSummary.debt) }}
             </div>
-            <div class="mt-1 text-xs text-gray-500">
+            <div class="text-xs text-gray-500">
               Majburiyat: {{ formatAmount(stallDebtSummary.expected) }} —
               To'langan: {{ formatAmount(stallDebtSummary.paid) }}
             </div>
@@ -274,7 +369,7 @@ onMounted(async () => {
               To'lanmagan qatnovlar: {{ stallDebtSummary.unpaidCount }} / {{ stallDebtSummary.totalAttendances }}
             </div>
           </div>
-          <div class="flex items-center justify-end md:justify-center">
+          <div class="flex items-center justify-center">
             <BaseButton
               color="info"
               :disabled="debtLoading"
@@ -287,9 +382,15 @@ onMounted(async () => {
 
       <CardBox>
         <div class="p-6">
-          <div class="mb-3 text-sm font-medium">Joriy oy: kunlik tushum (Rasta vs Do'kon)</div>
-          <div style="height: 320px">
-            <LineChart :data="chartData" />
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div class="text-sm font-semibold">Joriy oy: kunlik tushum (Rasta vs Do'kon)</div>
+              <div class="text-xs text-gray-500">{{ currentMonthLabel }}</div>
+            </div>
+            <div class="text-xs text-gray-500">Kunlar kesimida umumiy tushum</div>
+          </div>
+          <div style="height: 360px">
+            <LineChart :data="chartData" :options="chartOptions" />
           </div>
         </div>
       </CardBox>

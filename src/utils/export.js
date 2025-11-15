@@ -1,3 +1,5 @@
+import { utils, writeFile } from 'xlsx'
+
 export function toCSV(headers, rows) {
   const escape = (val) => {
     if (val === null || val === undefined) return ''
@@ -22,3 +24,11 @@ export function downloadCSV(filename, headers, rows) {
   URL.revokeObjectURL(url)
 }
 
+export function downloadXLSX(filename, headers, rows, sheetName = 'Sheet1') {
+  const normalizedHeaders = headers.map((header) => header ?? '')
+  const normalizedRows = rows.map((row) => row.map((cell) => cell ?? ''))
+  const worksheet = utils.aoa_to_sheet([normalizedHeaders, ...normalizedRows])
+  const workbook = utils.book_new()
+  utils.book_append_sheet(workbook, worksheet, sheetName)
+  writeFile(workbook, filename)
+}
