@@ -11,7 +11,12 @@ import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import FilterToolbar from '@/components/FilterToolbar.vue'
 import { listContracts } from '@/services/contracts'
-import { listAttendances, getAttendancePayUrl, refreshAttendance, getAttendanceHistory } from '@/services/attendances'
+import {
+  listAttendances,
+  getAttendancePayUrl,
+  refreshAttendance,
+  getAttendanceHistory,
+} from '@/services/attendances'
 import { listSections } from '@/services/sections'
 import { downloadXLSX } from '../utils/export'
 import { isContractActive } from '@/utils/contracts'
@@ -80,7 +85,7 @@ function contractPaymentStatus(contract) {
       lastDate &&
       now &&
       lastDate.getFullYear() === now.getFullYear() &&
-        lastDate.getMonth() === now.getMonth()
+      lastDate.getMonth() === now.getMonth()
     return sameMonth ? 'paid' : 'overdue'
   }
   return isContractActive(contract) ? 'overdue' : 'inactive'
@@ -111,12 +116,7 @@ const filteredContracts = computed(() => {
     if (contractStatus.value === 'paid' && contractPaymentStatus(c) !== 'paid') return false
 
     if (!q) return true
-    const haystack = [
-      c.owner?.fullName,
-      c.owner?.tin,
-      c.store?.storeNumber,
-      c.certificateNumber,
-    ]
+    const haystack = [c.owner?.fullName, c.owner?.tin, c.store?.storeNumber, c.certificateNumber]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()
@@ -190,7 +190,9 @@ const attendanceHistorySummary = computed(() => {
   )
 })
 
-const dailyHistorySummary = computed(() => dailyHistoryModal.value.summary || { paid: 0, unpaid: 0, amountPaid: 0, amountUnpaid: 0 })
+const dailyHistorySummary = computed(
+  () => dailyHistoryModal.value.summary || { paid: 0, unpaid: 0, amountPaid: 0, amountUnpaid: 0 },
+)
 
 async function fetchContracts() {
   contractLoading.value = true
@@ -222,7 +224,7 @@ async function fetchAttendances() {
     })
     attendanceItems.value = res.data || []
   } catch (e) {
-    attendanceError.value = e?.response?.data?.message || 'Rasta to\'lovlarini olishda xatolik'
+    attendanceError.value = e?.response?.data?.message || "Rasta to'lovlarini olishda xatolik"
   } finally {
     attendanceLoading.value = false
   }
@@ -301,7 +303,7 @@ async function refreshSingleAttendance(attendance) {
     if (fresh) updateAttendanceInList(fresh)
   } catch (e) {
     console.error(e)
-    alert("Statusni yangilashda xatolik")
+    alert('Statusni yangilashda xatolik')
   } finally {
     const clone = { ...attendanceRefreshState.value }
     delete clone[attendance.id]
@@ -318,7 +320,9 @@ async function openAttendanceHistory(attendance) {
   attendanceHistoryModal.value.summary = null
   attendanceHistoryError.value = ''
   try {
-    const history = await getAttendanceHistory(attendance.id, { days: attendanceHistoryModal.value.days })
+    const history = await getAttendanceHistory(attendance.id, {
+      days: attendanceHistoryModal.value.days,
+    })
     attendanceHistoryModal.value.items = history.items || []
     attendanceHistoryModal.value.total = history.total || history.items?.length || 0
     attendanceHistoryModal.value.days = history.days || attendanceHistoryModal.value.days
@@ -337,7 +341,7 @@ async function openAttendanceHistory(attendance) {
 function downloadAttendanceHistory() {
   const items = attendanceHistoryModal.value.items || []
   if (!items.length) return
-  const headers = ["Sana", "Holati", "Summasi", "Bo'lim", "Izoh"]
+  const headers = ['Sana', 'Holati', 'Summasi', "Bo'lim", 'Izoh']
   const rows = items.map((item) => [
     formatTashkentDate(item.date) || '',
     item.status,
@@ -345,7 +349,12 @@ function downloadAttendanceHistory() {
     item.Stall?.Section?.name || attendanceHistoryModal.value.stallInfo?.sectionName || '',
     item.Stall?.description || attendanceHistoryModal.value.stallInfo?.description || '',
   ])
-  downloadXLSX(`stall_${attendanceHistoryModal.value.stallId}_history.xlsx`, headers, rows, 'History')
+  downloadXLSX(
+    `stall_${attendanceHistoryModal.value.stallId}_history.xlsx`,
+    headers,
+    rows,
+    'History',
+  )
 }
 
 async function openDailyHistory() {
@@ -408,7 +417,7 @@ async function openDailyHistory() {
 
 function downloadDailyHistory() {
   if (!dailyHistoryModal.value.items.length) return
-  const headers = ["Sana", "Rasta", "Bo'lim", 'Holati', 'Summasi']
+  const headers = ['Sana', 'Rasta', "Bo'lim", 'Holati', 'Summasi']
   const rows = dailyHistoryModal.value.items.map((item) => [
     formatTashkentDate(item.date) || '-',
     item.stallId,
@@ -454,7 +463,10 @@ onMounted(async () => {
     <SectionMain>
       <SectionTitle first>To'lovlar holati</SectionTitle>
 
-      <div v-if="contractError" class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700">
+      <div
+        v-if="contractError"
+        class="mb-3 rounded border border-red-200 bg-red-50 p-3 text-red-700"
+      >
         {{ contractError }}
       </div>
 
@@ -463,7 +475,9 @@ onMounted(async () => {
           <div class="p-4">
             <div class="text-xs text-gray-500">Faol shartnomalar</div>
             <div class="text-2xl font-semibold">{{ contractSummary.total }}</div>
-            <div class="text-xs text-gray-400">Oylik majburiyat: {{ contractSummary.monthly }}</div>
+            <div class="text-xs text-gray-400">
+              Oylik majburiyat: 2 {{ contractSummary.monthly }}
+            </div>
           </div>
         </CardBox>
         <CardBox>
@@ -506,7 +520,13 @@ onMounted(async () => {
           </FormField>
 
           <template #actions>
-            <BaseButton outline color="info" :disabled="contractLoading" label="XLSX eksport" @click="exportContractsXLSX" />
+            <BaseButton
+              outline
+              color="info"
+              :disabled="contractLoading"
+              label="XLSX eksport"
+              @click="exportContractsXLSX"
+            />
           </template>
         </FilterToolbar>
       </CardBox>
@@ -537,9 +557,7 @@ onMounted(async () => {
               >
                 <td class="px-4 py-2">
                   <div class="font-medium">{{ c.owner?.fullName || c.ownerId }}</div>
-                  <div class="text-xs text-gray-500">
-                    STIR: {{ c.owner?.tin }} • #{{ c.id }}
-                  </div>
+                  <div class="text-xs text-gray-500">STIR: {{ c.owner?.tin }} • #{{ c.id }}</div>
                 </td>
                 <td class="px-4 py-2">
                   <div class="font-medium">{{ c.store?.storeNumber || c.storeId }}</div>
@@ -596,7 +614,10 @@ onMounted(async () => {
         </div>
       </CardBox>
 
-      <div v-if="attendanceError" class="mt-6 rounded border border-red-200 bg-red-50 p-3 text-red-700">
+      <div
+        v-if="attendanceError"
+        class="mt-6 rounded border border-red-200 bg-red-50 p-3 text-red-700"
+      >
         {{ attendanceError }}
       </div>
 
@@ -737,18 +758,26 @@ onMounted(async () => {
               v-if="attendanceHistoryModal.stallInfo"
               class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
             >
-              <div class="font-semibold">Rasta #{{ attendanceHistoryModal.stallInfo.number || attendanceHistoryModal.stallId }}</div>
+              <div class="font-semibold">
+                Rasta #{{
+                  attendanceHistoryModal.stallInfo.number || attendanceHistoryModal.stallId
+                }}
+              </div>
               <div class="text-xs text-slate-500 dark:text-slate-300">
                 Bo'lim: {{ attendanceHistoryModal.stallInfo.sectionName || '-' }} • Ta'rif:
                 {{ attendanceHistoryModal.stallInfo.description || '-' }}
               </div>
             </div>
             <div class="flex flex-wrap items-center gap-3">
-              <div class="rounded-lg bg-green-50 px-3 py-2 text-green-700 dark:bg-green-900/20 dark:text-green-300">
+              <div
+                class="rounded-lg bg-green-50 px-3 py-2 text-green-700 dark:bg-green-900/20 dark:text-green-300"
+              >
                 To'langan: {{ attendanceHistorySummary.paid || 0 }} ta —
                 {{ (attendanceHistorySummary.amountPaid || 0).toLocaleString('ru-RU') }} so'm
               </div>
-              <div class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+              <div
+                class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700 dark:bg-amber-900/20 dark:text-amber-200"
+              >
                 To'lanmagan: {{ attendanceHistorySummary.unpaid || 0 }} ta —
                 {{ (attendanceHistorySummary.amountUnpaid || 0).toLocaleString('ru-RU') }} so'm
               </div>
@@ -815,11 +844,15 @@ onMounted(async () => {
         </template>
         <template v-else>
           <div class="flex flex-wrap items-center gap-3 text-sm">
-            <div class="rounded-lg bg-green-50 px-3 py-2 text-green-700 dark:bg-green-900/20 dark:text-green-300">
+            <div
+              class="rounded-lg bg-green-50 px-3 py-2 text-green-700 dark:bg-green-900/20 dark:text-green-300"
+            >
               To'langan: {{ dailyHistorySummary.paid || 0 }} ta —
               {{ (dailyHistorySummary.amountPaid || 0).toLocaleString('ru-RU') }} so'm
             </div>
-            <div class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+            <div
+              class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700 dark:bg-amber-900/20 dark:text-amber-200"
+            >
               To'lanmagan: {{ dailyHistorySummary.unpaid || 0 }} ta —
               {{ (dailyHistorySummary.amountUnpaid || 0).toLocaleString('ru-RU') }} so'm
             </div>
@@ -835,7 +868,9 @@ onMounted(async () => {
           <div class="text-xs text-gray-500 dark:text-gray-300">
             Diapazon: {{ dailyHistoryModal.rangeLabel || '' }}
           </div>
-          <div v-if="dailyHistoryModal.loading" class="py-6 text-center text-sm text-gray-500">Yuklanmoqda...</div>
+          <div v-if="dailyHistoryModal.loading" class="py-6 text-center text-sm text-gray-500">
+            Yuklanmoqda...
+          </div>
           <div v-else class="overflow-x-auto">
             <table class="mt-4 w-full text-sm">
               <thead>
