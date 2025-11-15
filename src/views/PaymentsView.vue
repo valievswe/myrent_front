@@ -51,6 +51,15 @@ const attendanceHistoryModal = ref({
   summary: null,
 })
 const attendanceHistoryError = ref('')
+const dailyHistoryModal = ref({
+  open: false,
+  loading: false,
+  days: 30,
+  items: [],
+  summary: null,
+  rangeLabel: '',
+})
+const dailyHistoryError = ref('')
 
 function contractPaymentStatus(contract) {
   const tx = (contract.transactions || [])
@@ -180,6 +189,8 @@ const attendanceHistorySummary = computed(() => {
     { paid: 0, unpaid: 0, amountPaid: 0, amountUnpaid: 0 },
   )
 })
+
+const dailyHistorySummary = computed(() => dailyHistoryModal.value.summary || { paid: 0, unpaid: 0, amountPaid: 0, amountUnpaid: 0 })
 
 async function fetchContracts() {
   contractLoading.value = true
@@ -335,6 +346,77 @@ function downloadAttendanceHistory() {
     item.Stall?.description || attendanceHistoryModal.value.stallInfo?.description || '',
   ])
   downloadXLSX(`stall_${attendanceHistoryModal.value.stallId}_history.xlsx`, headers, rows, 'History')
+}
+
+async function openDailyHistory() {
+  dailyHistoryModal.value.open = true
+  dailyHistoryModal.value.loading = true
+  dailyHistoryModal.value.summary = null
+  dailyHistoryModal.value.items = []
+  dailyHistoryError.value = ''
+  try {
+    const rangeDays = dailyHistoryModal.value.days
+    const anchor = parseTashkentDate(attendanceDate.value) || new Date()
+    const end = new Date(anchor)
+    end.setHours(23, 59, 59, 999)
+    const start = new Date(anchor)
+    start.setDate(start.getDate() - (rangeDays - 1))
+    start.setHours(0, 0, 0, 0)
+    const isoStart = formatTashkentDateISO(start) || start.toISOString().slice(0, 10)
+    const isoEnd = formatTashkentDateISO(end) || attendanceDate.value
+
+    const results = []
+    let page = 1
+    const pageSize = 300
+    while (page <= 10) {
+      const res = await listAttendances({
+        page,
+        limit: pageSize,
+        dateFrom: isoStart,
+        dateTo: isoEnd,
+      })
+      const chunk = res.data || []
+      results.push(...chunk)
+      if (chunk.length < pageSize) break
+      page += 1
+    }
+
+    dailyHistoryModal.value.items = results
+    dailyHistoryModal.value.summary = results.reduce(
+      (acc, item) => {
+        const amount = Number(item.amount || 0)
+        if (item.status === 'PAID' || item.transaction?.status === 'PAID') {
+          acc.paid += 1
+          acc.amountPaid += amount
+        } else {
+          acc.unpaid += 1
+          acc.amountUnpaid += amount
+        }
+        return acc
+      },
+      { paid: 0, unpaid: 0, amountPaid: 0, amountUnpaid: 0 },
+    )
+    dailyHistoryModal.value.rangeLabel = `${formatTashkentDate(start) || isoStart} — ${formatTashkentDate(end) || isoEnd}`
+  } catch (e) {
+    dailyHistoryError.value = e?.response?.data?.message || 'Kunlik tarixni olishda xatolik'
+    dailyHistoryModal.value.items = []
+    dailyHistoryModal.value.summary = null
+  } finally {
+    dailyHistoryModal.value.loading = false
+  }
+}
+
+function downloadDailyHistory() {
+  if (!dailyHistoryModal.value.items.length) return
+  const headers = ["Sana", "Rasta", "Bo'lim", 'Holati', 'Summasi']
+  const rows = dailyHistoryModal.value.items.map((item) => [
+    formatTashkentDate(item.date) || '-',
+    item.stallId,
+    item.Stall?.Section?.name || '-',
+    item.status,
+    item.amount ?? '',
+  ])
+  downloadXLSX(`daily_history_${attendanceDate.value}.xlsx`, headers, rows, 'DailyHistory')
 }
 
 function sectionNameForAttendance(a) {
@@ -538,6 +620,13 @@ onMounted(async () => {
           <template #actions>
             <BaseButton
               outline
+              :icon="mdiHistory"
+              :disabled="attendanceLoading"
+              label="Kunlik tarix"
+              @click="openDailyHistory"
+            />
+            <BaseButton
+              outline
               color="info"
               :disabled="attendanceLoading"
               label="XLSX eksport"
@@ -691,6 +780,81 @@ onMounted(async () => {
                 </tr>
                 <tr v-for="item in attendanceHistoryModal.items" :key="item.id">
                   <td class="px-2 py-1">{{ formatTashkentDate(item.date) || '-' }}</td>
+                  <td class="px-2 py-1">
+                    <span
+                      :class="[
+                        'rounded-full px-2 py-0.5 text-xs font-semibold',
+                        item.status === 'PAID'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-amber-100 text-amber-700',
+                      ]"
+                    >
+                      {{ item.status }}
+                    </span>
+                  </td>
+                  <td class="px-2 py-1">{{ item.amount ?? '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+      </CardBoxModal>
+
+      <CardBoxModal
+        v-model="dailyHistoryModal.open"
+        button="info"
+        button-label="Yopish"
+        :confirm-disabled="dailyHistoryModal.loading"
+        :has-cancel="false"
+        title="Kunlik rasta tarixi"
+      >
+        <template v-if="dailyHistoryError">
+          <div class="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {{ dailyHistoryError }}
+          </div>
+        </template>
+        <template v-else>
+          <div class="flex flex-wrap items-center gap-3 text-sm">
+            <div class="rounded-lg bg-green-50 px-3 py-2 text-green-700 dark:bg-green-900/20 dark:text-green-300">
+              To'langan: {{ dailyHistorySummary.paid || 0 }} ta —
+              {{ (dailyHistorySummary.amountPaid || 0).toLocaleString('ru-RU') }} so'm
+            </div>
+            <div class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+              To'lanmagan: {{ dailyHistorySummary.unpaid || 0 }} ta —
+              {{ (dailyHistorySummary.amountUnpaid || 0).toLocaleString('ru-RU') }} so'm
+            </div>
+            <BaseButton
+              small
+              outline
+              :icon="mdiFileExcelBox"
+              label="XLSX"
+              :disabled="dailyHistoryModal.loading || !dailyHistoryModal.items.length"
+              @click="downloadDailyHistory"
+            />
+          </div>
+          <div class="text-xs text-gray-500 dark:text-gray-300">
+            Diapazon: {{ dailyHistoryModal.rangeLabel || '' }}
+          </div>
+          <div v-if="dailyHistoryModal.loading" class="py-6 text-center text-sm text-gray-500">Yuklanmoqda...</div>
+          <div v-else class="overflow-x-auto">
+            <table class="mt-4 w-full text-sm">
+              <thead>
+                <tr>
+                  <th class="px-2 py-1 text-left">Sana</th>
+                  <th class="px-2 py-1 text-left">Rasta</th>
+                  <th class="px-2 py-1 text-left">Bo'lim</th>
+                  <th class="px-2 py-1 text-left">Holat</th>
+                  <th class="px-2 py-1 text-left">Summasi</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!dailyHistoryModal.items.length">
+                  <td colspan="5" class="px-2 py-4 text-center text-gray-500">Tarix mavjud emas</td>
+                </tr>
+                <tr v-for="item in dailyHistoryModal.items" :key="item.id">
+                  <td class="px-2 py-1">{{ formatTashkentDate(item.date) || '-' }}</td>
+                  <td class="px-2 py-1">#{{ item.stallId }}</td>
+                  <td class="px-2 py-1">{{ item.Stall?.Section?.name || '-' }}</td>
                   <td class="px-2 py-1">
                     <span
                       :class="[

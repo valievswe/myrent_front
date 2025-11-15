@@ -46,6 +46,12 @@ const stallDebtSummary = ref({
 })
 const debtLoading = ref(false)
 const debtError = ref('')
+const statsFilter = ref('all')
+const statsFilterOptions = [
+  { key: 'all', label: 'Jami' },
+  { key: 'stall', label: 'Rasta' },
+  { key: 'store', label: "Do'kon" },
+]
 
 const numberFormatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 })
 const dateFormatter = new Intl.DateTimeFormat('uz-UZ', {
@@ -158,32 +164,36 @@ function formatAmount(value) {
 }
 
 const chartData = computed(() => {
+  const datasets = []
+  if (statsFilter.value === 'all' || statsFilter.value === 'stall') {
+    datasets.push({
+      label: 'Rastalar',
+      fill: true,
+      borderColor: '#fb7185',
+      pointBackgroundColor: '#fb7185',
+      backgroundColor: 'rgba(251,113,133,0.15)',
+      borderWidth: 3,
+      pointRadius: 2,
+      data: stallsDaily.value,
+      tension: 0.3,
+    })
+  }
+  if (statsFilter.value === 'all' || statsFilter.value === 'store') {
+    datasets.push({
+      label: "Do'konlar",
+      fill: true,
+      borderColor: '#38bdf8',
+      pointBackgroundColor: '#38bdf8',
+      backgroundColor: 'rgba(56,189,248,0.15)',
+      borderWidth: 3,
+      pointRadius: 2,
+      data: storesDaily.value,
+      tension: 0.3,
+    })
+  }
   return {
     labels: monthDays.value,
-    datasets: [
-      {
-        label: 'Rastalar',
-        fill: true,
-        borderColor: '#fb7185',
-        pointBackgroundColor: '#fb7185',
-        backgroundColor: 'rgba(251,113,133,0.15)',
-        borderWidth: 3,
-        pointRadius: 2,
-        data: stallsDaily.value,
-        tension: 0.3,
-      },
-      {
-        label: "Do'konlar",
-        fill: true,
-        borderColor: '#38bdf8',
-        pointBackgroundColor: '#38bdf8',
-        backgroundColor: 'rgba(56,189,248,0.15)',
-        borderWidth: 3,
-        pointRadius: 2,
-        data: storesDaily.value,
-        tension: 0.3,
-      },
-    ],
+    datasets,
   }
 })
 
@@ -223,18 +233,21 @@ const chartOptions = computed(() => ({
 
 const dailyCards = computed(() => [
   {
+    key: 'all',
     title: "Bugun (Jami)",
     revenue: formatAmount(dailyAll.value.revenue),
     count: formatCount(dailyAll.value.count),
     accent: 'from-slate-100 to-slate-50',
   },
   {
+    key: 'stall',
     title: "Bugun (Rastalar)",
     revenue: formatAmount(dailyStalls.value.revenue),
     count: formatCount(dailyStalls.value.count),
     accent: 'from-orange-50 to-amber-50',
   },
   {
+    key: 'store',
     title: "Bugun (Do'konlar)",
     revenue: formatAmount(dailyStores.value.revenue),
     count: formatCount(dailyStores.value.count),
@@ -244,24 +257,37 @@ const dailyCards = computed(() => [
 
 const monthlyCards = computed(() => [
   {
+    key: 'all',
     title: "Joriy oy (Jami)",
     revenue: formatAmount(monthRevenueAll.value.revenue),
     count: formatCount(monthlyAll.value.count),
     accent: 'from-slate-100 to-slate-50',
   },
   {
+    key: 'stall',
     title: "Joriy oy (Rastalar)",
     revenue: formatAmount(monthRevenueStalls.value.revenue),
     count: formatCount(monthlyStalls.value.count),
     accent: 'from-orange-50 to-amber-50',
   },
   {
+    key: 'store',
     title: "Joriy oy (Do'konlar)",
     revenue: formatAmount(monthRevenueStores.value.revenue),
     count: formatCount(monthlyStores.value.count),
     accent: 'from-sky-50 to-blue-50',
   },
 ])
+
+const filteredDailyCards = computed(() => {
+  if (statsFilter.value === 'all') return dailyCards.value
+  return dailyCards.value.filter((card) => card.key === statsFilter.value)
+})
+
+const filteredMonthlyCards = computed(() => {
+  if (statsFilter.value === 'all') return monthlyCards.value
+  return monthlyCards.value.filter((card) => card.key === statsFilter.value)
+})
 
 async function fetchStats() {
   loading.value = true
@@ -318,8 +344,23 @@ onMounted(async () => {
         </div>
       </div>
 
+      <div class="mb-4 flex flex-wrap items-center gap-3">
+        <div class="text-sm font-medium text-slate-600 dark:text-slate-200">Filtr:</div>
+        <div class="flex flex-wrap gap-2">
+          <BaseButton
+            v-for="option in statsFilterOptions"
+            :key="option.key"
+            small
+            :color="statsFilter === option.key ? 'primary' : 'info'"
+            :outline="statsFilter !== option.key"
+            :label="option.label"
+            @click="statsFilter = option.key"
+          />
+        </div>
+      </div>
+
       <div class="mb-6 grid gap-4 md:grid-cols-3">
-        <CardBox v-for="card in dailyCards" :key="card.title">
+        <CardBox v-for="card in filteredDailyCards" :key="card.title">
           <div
             class="rounded-xl bg-gradient-to-r p-5 dark:border dark:border-slate-700 dark:bg-slate-800"
             :class="card.accent"
@@ -334,7 +375,7 @@ onMounted(async () => {
       </div>
 
       <div class="mb-6 grid gap-4 md:grid-cols-3">
-        <CardBox v-for="card in monthlyCards" :key="card.title">
+        <CardBox v-for="card in filteredMonthlyCards" :key="card.title">
           <div
             class="rounded-xl bg-gradient-to-r p-5 dark:border dark:border-slate-700 dark:bg-slate-800"
             :class="card.accent"
