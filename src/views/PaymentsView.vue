@@ -13,7 +13,7 @@ import FilterToolbar from '@/components/FilterToolbar.vue'
 import { listContracts } from '@/services/contracts'
 import { listAttendances, getAttendancePayUrl, refreshAttendance, getAttendanceHistory } from '@/services/attendances'
 import { listSections } from '@/services/sections'
-import { downloadCSV, downloadXLSX } from '../utils/export'
+import { downloadXLSX } from '../utils/export'
 import { isContractActive } from '@/utils/contracts'
 import {
   formatTashkentDate,
@@ -47,6 +47,8 @@ const attendanceHistoryModal = ref({
   days: 30,
   items: [],
   total: 0,
+  stallInfo: null,
+  summary: null,
 })
 const attendanceHistoryError = ref('')
 
@@ -159,6 +161,9 @@ const attendanceSummary = computed(() => {
 })
 
 const attendanceHistorySummary = computed(() => {
+  if (attendanceHistoryModal.value.summary) {
+    return attendanceHistoryModal.value.summary
+  }
   const items = attendanceHistoryModal.value.items || []
   return items.reduce(
     (acc, item) => {
@@ -212,7 +217,7 @@ async function fetchAttendances() {
   }
 }
 
-async function exportContractsCSV() {
+async function exportContractsXLSX() {
   contractLoading.value = true
   try {
     const headers = ['ID', 'Ega', "Do'kon", 'Oylik fee', 'Holati', "Oxirgi to'lov"]
@@ -228,13 +233,13 @@ async function exportContractsCSV() {
         lastPaid ? formatTashkentDateISO(lastPaid.createdAt) : '',
       ]
     })
-    downloadCSV(`contract_payments_${getTashkentTodayISO()}.csv`, headers, rows)
+    downloadXLSX(`contract_payments_${getTashkentTodayISO()}.xlsx`, headers, rows, 'Contracts')
   } finally {
     contractLoading.value = false
   }
 }
 
-async function exportAttendancesCSV() {
+async function exportAttendancesXLSX() {
   attendanceLoading.value = true
   try {
     const headers = ['ID', 'Sana', 'Rasta', 'Holati', 'Summasi']
@@ -245,7 +250,7 @@ async function exportAttendancesCSV() {
       a.status,
       a.amount ?? '',
     ])
-    downloadCSV(`attendance_payments_${attendanceDate.value}.csv`, headers, rows)
+    downloadXLSX(`attendance_payments_${attendanceDate.value}.xlsx`, headers, rows, 'Stalls')
   } finally {
     attendanceLoading.value = false
   }
@@ -298,15 +303,21 @@ async function openAttendanceHistory(attendance) {
   attendanceHistoryModal.value.open = true
   attendanceHistoryModal.value.loading = true
   attendanceHistoryModal.value.stallId = attendance.stallId
+  attendanceHistoryModal.value.stallInfo = null
+  attendanceHistoryModal.value.summary = null
   attendanceHistoryError.value = ''
   try {
     const history = await getAttendanceHistory(attendance.id, { days: attendanceHistoryModal.value.days })
     attendanceHistoryModal.value.items = history.items || []
     attendanceHistoryModal.value.total = history.total || history.items?.length || 0
     attendanceHistoryModal.value.days = history.days || attendanceHistoryModal.value.days
+    attendanceHistoryModal.value.stallInfo = history.stallInfo || null
+    attendanceHistoryModal.value.summary = history.summary || null
   } catch (e) {
     attendanceHistoryError.value = e?.response?.data?.message || 'Tarixni yuklashda xatolik'
     attendanceHistoryModal.value.items = []
+    attendanceHistoryModal.value.summary = null
+    attendanceHistoryModal.value.stallInfo = null
   } finally {
     attendanceHistoryModal.value.loading = false
   }
@@ -315,12 +326,13 @@ async function openAttendanceHistory(attendance) {
 function downloadAttendanceHistory() {
   const items = attendanceHistoryModal.value.items || []
   if (!items.length) return
-  const headers = ["Sana", "Rasta", "Holati", "Summasi"]
+  const headers = ["Sana", "Holati", "Summasi", "Bo'lim", "Izoh"]
   const rows = items.map((item) => [
     formatTashkentDate(item.date) || '',
-    item.stallId,
     item.status,
     item.amount ?? '',
+    item.Stall?.Section?.name || attendanceHistoryModal.value.stallInfo?.sectionName || '',
+    item.Stall?.description || attendanceHistoryModal.value.stallInfo?.description || '',
   ])
   downloadXLSX(`stall_${attendanceHistoryModal.value.stallId}_history.xlsx`, headers, rows, 'History')
 }
@@ -412,7 +424,7 @@ onMounted(async () => {
           </FormField>
 
           <template #actions>
-            <BaseButton outline color="info" :disabled="contractLoading" label="Eksport" @click="exportContractsCSV" />
+            <BaseButton outline color="info" :disabled="contractLoading" label="XLSX eksport" @click="exportContractsXLSX" />
           </template>
         </FilterToolbar>
       </CardBox>
@@ -528,8 +540,8 @@ onMounted(async () => {
               outline
               color="info"
               :disabled="attendanceLoading"
-              label="Eksport"
-              @click="exportAttendancesCSV"
+              label="XLSX eksport"
+              @click="exportAttendancesXLSX"
             />
           </template>
         </FilterToolbar>
@@ -631,23 +643,35 @@ onMounted(async () => {
           </div>
         </template>
         <template v-else>
-          <div class="flex flex-wrap items-center gap-3 text-sm">
-            <div class="rounded-lg bg-green-50 px-3 py-2 text-green-700">
-              To'langan: {{ attendanceHistorySummary.paid }} ta —
-              {{ attendanceHistorySummary.amountPaid.toLocaleString('ru-RU') }} so'm
+          <div class="space-y-3 text-sm">
+            <div
+              v-if="attendanceHistoryModal.stallInfo"
+              class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            >
+              <div class="font-semibold">Rasta #{{ attendanceHistoryModal.stallInfo.number || attendanceHistoryModal.stallId }}</div>
+              <div class="text-xs text-slate-500 dark:text-slate-300">
+                Bo'lim: {{ attendanceHistoryModal.stallInfo.sectionName || '-' }} • Ta'rif:
+                {{ attendanceHistoryModal.stallInfo.description || '-' }}
+              </div>
             </div>
-            <div class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700">
-              To'lanmagan: {{ attendanceHistorySummary.unpaid }} ta —
-              {{ attendanceHistorySummary.amountUnpaid.toLocaleString('ru-RU') }} so'm
+            <div class="flex flex-wrap items-center gap-3">
+              <div class="rounded-lg bg-green-50 px-3 py-2 text-green-700 dark:bg-green-900/20 dark:text-green-300">
+                To'langan: {{ attendanceHistorySummary.paid || 0 }} ta —
+                {{ (attendanceHistorySummary.amountPaid || 0).toLocaleString('ru-RU') }} so'm
+              </div>
+              <div class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+                To'lanmagan: {{ attendanceHistorySummary.unpaid || 0 }} ta —
+                {{ (attendanceHistorySummary.amountUnpaid || 0).toLocaleString('ru-RU') }} so'm
+              </div>
+              <BaseButton
+                :icon="mdiFileExcelBox"
+                label="XLSX"
+                small
+                outline
+                :disabled="attendanceHistoryModal.loading || !attendanceHistoryModal.items.length"
+                @click="downloadAttendanceHistory"
+              />
             </div>
-            <BaseButton
-              :icon="mdiFileExcelBox"
-              label="XLSX"
-              small
-              outline
-              :disabled="attendanceHistoryModal.loading || !attendanceHistoryModal.items.length"
-              @click="downloadAttendanceHistory"
-            />
           </div>
           <div v-if="attendanceHistoryModal.loading" class="py-6 text-center text-sm text-gray-500">
             Yuklanmoqda...

@@ -301,42 +301,50 @@ onMounted(async () => {
         {{ debtError }}
       </div>
 
-      <div class="mb-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 text-white shadow-lg">
-        <div class="text-xs uppercase tracking-wide text-white/70">Bugungi holat</div>
+      <div class="mb-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 text-white shadow-lg dark:from-slate-800 dark:via-slate-900 dark:to-black">
+        <div class="text-xs uppercase tracking-wide text-white/80 dark:text-white/80">Bugungi holat</div>
         <div class="mt-2 text-3xl font-semibold md:text-4xl">{{ todayLabel }}</div>
         <div class="mt-6 grid gap-4 md:grid-cols-2">
-          <div class="rounded-xl bg-white/10 p-4 backdrop-blur">
+          <div class="rounded-xl bg-white/10 p-4 text-white backdrop-blur dark:bg-white/5">
             <div class="text-sm text-white/70">To'langan rastalar</div>
             <div class="mt-3 text-4xl font-bold md:text-5xl">{{ formatCount(dailyStalls.count) }}</div>
-            <div class="text-xs text-white/60">Jami tushum: {{ formatAmount(dailyStalls.revenue) }} so'm</div>
+            <div class="text-xs text-white/70">Jami tushum: {{ formatAmount(dailyStalls.revenue) }} so'm</div>
           </div>
-          <div class="rounded-xl bg-white/10 p-4 backdrop-blur">
+          <div class="rounded-xl bg-white/10 p-4 text-white backdrop-blur dark:bg-white/5">
             <div class="text-sm text-white/70">To'langan do'konlar</div>
             <div class="mt-3 text-4xl font-bold md:text-5xl">{{ formatCount(dailyStores.count) }}</div>
-            <div class="text-xs text-white/60">Jami tushum: {{ formatAmount(dailyStores.revenue) }} so'm</div>
+            <div class="text-xs text-white/70">Jami tushum: {{ formatAmount(dailyStores.revenue) }} so'm</div>
           </div>
         </div>
       </div>
 
       <div class="mb-6 grid gap-4 md:grid-cols-3">
         <CardBox v-for="card in dailyCards" :key="card.title">
-          <div class="rounded-xl bg-gradient-to-r p-5" :class="card.accent">
-            <div class="text-sm font-medium text-gray-500">{{ card.title }}</div>
-            <div class="mt-2 text-3xl font-semibold md:text-4xl">{{ card.revenue }}</div>
-            <div class="text-xs text-gray-500">Tranzaksiyalar: {{ card.count }}</div>
+          <div
+            class="rounded-xl bg-gradient-to-r p-5 dark:border dark:border-slate-700 dark:bg-slate-800"
+            :class="card.accent"
+          >
+            <div class="text-sm font-medium text-gray-600 dark:text-gray-300">{{ card.title }}</div>
+            <div class="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100 md:text-4xl">
+              {{ card.revenue }}
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-300">Tranzaksiyalar: {{ card.count }}</div>
           </div>
         </CardBox>
       </div>
 
       <div class="mb-6 grid gap-4 md:grid-cols-3">
         <CardBox v-for="card in monthlyCards" :key="card.title">
-          <div class="rounded-xl bg-gradient-to-r p-5" :class="card.accent">
-            <div class="flex items-center justify-between text-sm font-medium text-gray-500">
+          <div
+            class="rounded-xl bg-gradient-to-r p-5 dark:border dark:border-slate-700 dark:bg-slate-800"
+            :class="card.accent"
+          >
+            <div class="flex items-center justify-between text-sm font-medium text-gray-500 dark:text-gray-300">
               <span>{{ card.title }}</span>
-              <span class="text-xs uppercase text-gray-400">{{ currentMonthLabel }}</span>
+              <span class="text-xs uppercase text-gray-400 dark:text-gray-300">{{ currentMonthLabel }}</span>
             </div>
-            <div class="mt-2 text-3xl font-semibold md:text-4xl">{{ card.revenue }}</div>
-            <div class="text-xs text-gray-500">Tranzaksiyalar: {{ card.count }}</div>
+            <div class="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100 md:text-4xl">{{ card.revenue }}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-300">Tranzaksiyalar: {{ card.count }}</div>
           </div>
         </CardBox>
       </div>

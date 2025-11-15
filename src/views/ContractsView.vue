@@ -14,7 +14,7 @@ import PaginationControls from '@/components/PaginationControls.vue'
 import { listContracts, createContract, updateContract, deleteContract, refreshContract, getContractHistory } from '@/services/contracts'
 import { listOwners } from '@/services/owners'
 import { listStores } from '@/services/stores'
-import { downloadCSV, downloadXLSX } from '../utils/export'
+import { downloadXLSX } from '../utils/export'
 import {
   formatTashkentDate,
   formatTashkentDateISO,
@@ -45,6 +45,9 @@ const contractHistoryModal = ref({
   limit: 30,
   items: [],
   total: 0,
+  owner: null,
+  store: null,
+  summary: null,
 })
 const contractHistoryError = ref('')
 const qrModal = ref({
@@ -130,11 +133,13 @@ function getPaymentUrl(contract) {
 function getPaymentLinks(contract) {
   const store = resolveStore(contract)
   if (!store) return []
-  const links = [
-    { type: 'click', label: 'Click', url: store.click_payment_url || '' },
-    { type: 'payme', label: 'Payme', url: store.payme_payment_url || '' },
-  ]
-  return links.filter((link) => link.url)
+  if (store.payme_payment_url) {
+    return [{ type: 'payme', label: 'Payme', url: store.payme_payment_url }]
+  }
+  if (store.click_payment_url) {
+    return [{ type: 'click', label: 'Click', url: store.click_payment_url }]
+  }
+  return []
 }
 
 function currentMonthWindow() {
@@ -369,20 +374,30 @@ async function openContractHistory(contract) {
   contractHistoryModal.value.open = true
   contractHistoryModal.value.loading = true
   contractHistoryModal.value.contractId = contract.id
+  contractHistoryModal.value.owner = null
+  contractHistoryModal.value.store = null
+  contractHistoryModal.value.summary = null
   contractHistoryError.value = ''
   try {
     const history = await getContractHistory(contract.id, { limit: contractHistoryModal.value.limit })
     contractHistoryModal.value.items = history.transactions || []
     contractHistoryModal.value.total = history.total || history.transactions?.length || 0
+    contractHistoryModal.value.owner = history.owner || null
+    contractHistoryModal.value.store = history.store || null
+    contractHistoryModal.value.summary = history.summary || null
   } catch (e) {
     contractHistoryError.value = e?.response?.data?.message || 'Tarixni yuklashda xatolik'
     contractHistoryModal.value.items = []
+    contractHistoryModal.value.owner = null
+    contractHistoryModal.value.store = null
+    contractHistoryModal.value.summary = null
   } finally {
     contractHistoryModal.value.loading = false
   }
 }
 
 const contractHistorySummary = computed(() => {
+  if (contractHistoryModal.value.summary) return contractHistoryModal.value.summary
   const items = contractHistoryModal.value.items || []
   return items.reduce(
     (acc, tx) => {
@@ -402,12 +417,14 @@ const contractHistorySummary = computed(() => {
 function downloadContractHistory() {
   const items = contractHistoryModal.value.items || []
   if (!items.length) return
-  const headers = ["Sana", "Summasi", "Holat", "To'lov ID"]
+  const headers = ["Sana", "Summasi", "Holat", "To'lov ID", "Ega", "Do'kon"]
   const rows = items.map((tx) => [
     formatTashkentDate(tx.createdAt) || '',
     tx.amount ?? '',
     tx.status,
     tx.transactionId || tx.id,
+    contractHistoryModal.value.owner?.name || '',
+    contractHistoryModal.value.store?.number || '',
   ])
   downloadXLSX(`contract_${contractHistoryModal.value.contractId}_history.xlsx`, headers, rows, 'Tarix')
 }
@@ -548,7 +565,7 @@ const filteredStores = computed(() => {
   )
 })
 
-async function exportContractsCSV() {
+async function exportContractsXLSX() {
   loading.value = true
   try {
     const headers = [
@@ -594,13 +611,13 @@ async function exportContractsCSV() {
       if (arr.length < 100) break
       p++
     }
-    downloadCSV(`contracts_${getTashkentTodayISO()}.csv`, headers, rows)
+    downloadXLSX(`contracts_${getTashkentTodayISO()}.xlsx`, headers, rows, 'Contracts')
   } finally {
     loading.value = false
   }
 }
 
-async function exportContractTransactionsCSV() {
+async function exportContractTransactionsXLSX() {
   loading.value = true
   try {
     const headers = ['ContractID', 'Ega', "Do'kon", 'Sana', 'Summasi', 'Holat']
@@ -625,7 +642,7 @@ async function exportContractTransactionsCSV() {
       if (arr.length < 100) break
       p++
     }
-    downloadCSV(`contract_transactions_${getTashkentTodayISO()}.csv`, headers, rows)
+    downloadXLSX(`contract_transactions_${getTashkentTodayISO()}.xlsx`, headers, rows, 'Transactions')
   } finally {
     loading.value = false
   }
@@ -662,8 +679,8 @@ async function exportContractTransactionsCSV() {
                 </div>
               </div>
             </FormField>
-            <BaseButton color="info" outline :disabled="loading" label="Eksport (Shartnomalar)" @click="exportContractsCSV" />
-            <BaseButton color="info" outline :disabled="loading" label="Eksport (Tranzaksiyalar)" @click="exportContractTransactionsCSV" />
+            <BaseButton color="info" outline :disabled="loading" label="XLSX (Shartnomalar)" @click="exportContractsXLSX" />
+            <BaseButton color="info" outline :disabled="loading" label="XLSX (Tranzaksiyalar)" @click="exportContractTransactionsXLSX" />
           </div>
           <div class="flex items-center justify-end">
             <BaseButton color="success" :disabled="loading" label="Yaratish" @click="openCreate" />
@@ -811,22 +828,36 @@ async function exportContractTransactionsCSV() {
           </div>
         </template>
         <template v-else>
-          <div class="flex flex-wrap items-center gap-3 text-sm">
-            <div class="rounded-lg bg-green-50 px-3 py-2 text-green-700">
-              To'langan: {{ contractHistorySummary.paid }} ta —
-              {{ contractHistorySummary.amountPaid.toLocaleString('ru-RU') }} so'm
+          <div class="space-y-3 text-sm">
+            <div
+              v-if="contractHistoryModal.owner || contractHistoryModal.store"
+              class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            >
+              <div class="font-semibold">
+                {{ contractHistoryModal.owner?.name || 'Ega noma’lum' }}
+              </div>
+              <div class="text-xs text-slate-500 dark:text-slate-300">
+                Do'kon: {{ contractHistoryModal.store?.number || '-' }} •
+                {{ contractHistoryModal.store?.description || 'Izoh yo‘q' }}
+              </div>
             </div>
-            <div class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700">
-              Kutilmoqda: {{ contractHistorySummary.pending }} ta
+            <div class="flex flex-wrap items-center gap-3">
+              <div class="rounded-lg bg-green-50 px-3 py-2 text-green-700 dark:bg-green-900/20 dark:text-green-300">
+                To'langan: {{ contractHistorySummary.paid || 0 }} ta —
+                {{ (contractHistorySummary.amountPaid || 0).toLocaleString('ru-RU') }} so'm
+              </div>
+              <div class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+                Kutilmoqda: {{ contractHistorySummary.pending || 0 }} ta
+              </div>
+              <BaseButton
+                small
+                outline
+                :icon="mdiFileExcelBox"
+                label="XLSX"
+                :disabled="contractHistoryModal.loading || !contractHistoryModal.items.length"
+                @click="downloadContractHistory"
+              />
             </div>
-            <BaseButton
-              small
-              outline
-              :icon="mdiFileExcelBox"
-              label="XLSX"
-              :disabled="contractHistoryModal.loading || !contractHistoryModal.items.length"
-              @click="downloadContractHistory"
-            />
           </div>
           <div v-if="contractHistoryModal.loading" class="py-6 text-center text-sm text-gray-500">
             Yuklanmoqda...
