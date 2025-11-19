@@ -19,3 +19,15 @@ export async function deleteStall(id) {
   const { data } = await http.delete(`/stalls/${id}`)
   return data
 }
+
+export async function getStall(id) {
+  const { data } = await http.get(`/stalls/${id}`)
+  return data
+}
+
+export async function getStallHistory(id, params = {}) {
+  const query = {}
+  if (params.days) query.days = params.days
+  const { data } = await http.get(`/stalls/${id}/history`, { params: query })
+  return data
+}

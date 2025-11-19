@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { mdiRefresh, mdiQrcode, mdiHistory, mdiFileExcelBox } from '@mdi/js'
 import QRCode from 'qrcode'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
@@ -23,6 +24,7 @@ import {
   startOfTashkentDay,
 } from '@/utils/time'
 
+const router = useRouter()
 const items = ref([])
 const loading = ref(false)
 const errorMsg = ref('')
@@ -151,6 +153,9 @@ function currentMonthWindow() {
 }
 
 function contractPaidThisMonth(contract) {
+  if (contract?.paymentSnapshot) {
+    return Boolean(contract.paymentSnapshot.hasCurrentPeriodPaid)
+  }
   const window = currentMonthWindow()
   return (contract.transactions || []).some((tx) => {
     if (tx.status !== 'PAID' || !tx.createdAt) return false
@@ -158,6 +163,16 @@ function contractPaidThisMonth(contract) {
     if (!date) return false
     return date >= window.start && date < window.end
   })
+}
+
+function formatSnapshotDate(value) {
+  if (!value) return '-'
+  return formatTashkentDate(value) || '-'
+}
+
+function goToContractDetail(contract) {
+  if (!contract?.id) return
+  router.push({ name: 'contract-detail', params: { id: contract.id } })
 }
 
 function handleContractPayment(contract) {
@@ -727,9 +742,22 @@ async function exportContractTransactionsXLSX() {
                   </td>
                   <td class="px-4 py-2">{{ it.isActive ? 'Faol' : 'Faol emas' }}</td>
                   <td class="px-4 py-2">
-                    <span :class="(it.transactions || []).some(t => t.status === 'PAID') ? 'text-green-600' : 'text-red-600'">
-                      {{ (it.transactions || []).some(t => t.status === 'PAID') ? "To'langan" : 'Kutilmoqda' }}
-                    </span>
+                    <div v-if="it.paymentSnapshot">
+                      <div class="text-sm font-medium text-gray-800 dark:text-gray-200">
+                        Oxirgi: {{ formatSnapshotDate(it.paymentSnapshot.paidThrough) }}
+                      </div>
+                      <div class="text-xs text-gray-500">
+                        Keyingi: {{ formatSnapshotDate(it.paymentSnapshot.nextPeriodStart) }}
+                        <span v-if="it.paymentSnapshot.monthsAhead > 0" class="ml-1 text-emerald-600">
+                          (+{{ it.paymentSnapshot.monthsAhead }} oy)
+                        </span>
+                      </div>
+                    </div>
+                    <div v-else>
+                      <span :class="(it.transactions || []).some(t => t.status === 'PAID') ? 'text-green-600' : 'text-red-600'">
+                        {{ (it.transactions || []).some(t => t.status === 'PAID') ? "To'langan" : 'Kutilmoqda' }}
+                      </span>
+                    </div>
                     <div v-if="contractPaidThisMonth(it)" class="text-xs text-emerald-600">
                       Bu oy to'langan
                     </div>
@@ -750,6 +778,13 @@ async function exportContractTransactionsXLSX() {
                         label="Tahrirlash"
                         :disabled="contractPaidThisMonth(it)"
                         @click="openEdit(it)"
+                      />
+                      <BaseButton
+                        color="info"
+                        small
+                        outline
+                        label="Batafsil"
+                        @click="goToContractDetail(it)"
                       />
                       <BaseButton
                         small

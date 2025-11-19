@@ -207,6 +207,11 @@ async function toggleAttendance(it) {
   }
 }
 
+function goToStallDetail(stall) {
+  if (!stall?.id) return
+  router.push({ name: 'stall-detail', params: { id: stall.id } })
+}
+
 
 const getSectionName = (id) => sections.value.find((s) => s.id === id)?.name || (id ?? '-')
 const getSaleType = (id) => saleTypes.value.find((s) => s.id === id)
@@ -374,6 +379,14 @@ onUnmounted(() => cleanupDebounce())
                       label="O'chirish"
                       class="ml-2"
                       @click="removeItem(it.id)"
+                    />
+                    <BaseButton
+                      color="info"
+                      small
+                      outline
+                      label="Batafsil"
+                      class="ml-2"
+                      @click="goToStallDetail(it)"
                     />
                     <BaseButton
                       color="info"
