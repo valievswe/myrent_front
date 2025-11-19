@@ -6,18 +6,12 @@ import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
 import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
-import FormField from '@/components/FormField.vue'
-import FormControl from '@/components/FormControl.vue'
-import CardBoxModal from '@/components/CardBoxModal.vue'
 import {
   getContract,
   refreshContract,
   listContractPayments,
-  createContractPayments,
-  updateContractPayment,
-  deleteContractPayment,
 } from '@/services/contracts'
-import { formatTashkentDate, formatTashkentDateISO } from '@/utils/time'
+import { formatTashkentDate } from '@/utils/time'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,15 +27,6 @@ const paymentState = ref({
   items: [],
   snapshot: null,
 })
-const showPaymentModal = ref(false)
-const paymentForm = ref({
-  periodStart: '',
-  months: 1,
-  transactionId: '',
-  notes: '',
-})
-const submittingPayment = ref(false)
-
 function ownerName() {
   const c = contract.value
   if (!c) return '-'
@@ -79,14 +64,6 @@ function applyPaymentResponse(payload) {
   paymentState.value.snapshot = payload?.snapshot || null
 }
 
-function defaultPeriodStart() {
-  const snapshot = paymentState.value.snapshot
-  if (snapshot?.nextPeriodStart) {
-    return formatTashkentDateISO(snapshot.nextPeriodStart)
-  }
-  return formatTashkentDateISO(new Date())
-}
-
 async function loadContract() {
   if (!contractId.value) return
   loading.value = true
@@ -108,46 +85,10 @@ async function loadPayments() {
   try {
     const res = await listContractPayments(contractId.value)
     applyPaymentResponse(res)
-    if (!paymentForm.value.periodStart) {
-      paymentForm.value.periodStart = defaultPeriodStart()
-    }
   } catch (e) {
     paymentState.value.error = e?.response?.data?.message || "To'lov davrlarini yuklab bo'lmadi"
   } finally {
     paymentState.value.loading = false
-  }
-}
-
-function openPaymentModal() {
-  showPaymentModal.value = true
-  paymentForm.value = {
-    periodStart: defaultPeriodStart(),
-    months: 1,
-    transactionId: '',
-    notes: '',
-  }
-}
-
-async function submitPaymentForm() {
-  if (!contractId.value) return
-  submittingPayment.value = true
-  paymentState.value.error = ''
-  try {
-    const payload = {
-      periodStart: paymentForm.value.periodStart || undefined,
-      months: Number(paymentForm.value.months) || 1,
-      transactionId: paymentForm.value.transactionId
-        ? Number(paymentForm.value.transactionId)
-        : undefined,
-      notes: paymentForm.value.notes || undefined,
-    }
-    const res = await createContractPayments(contractId.value, payload)
-    applyPaymentResponse(res)
-    showPaymentModal.value = false
-  } catch (e) {
-    paymentState.value.error = e?.response?.data?.message || 'Davrni qo\'shib bo\'lmadi'
-  } finally {
-    submittingPayment.value = false
   }
 }
 
@@ -169,27 +110,6 @@ function formatDate(value) {
   return formatTashkentDate(value) || '-'
 }
 
-async function handleStatusChange(payment, status) {
-  if (!contractId.value) return
-  try {
-    const res = await updateContractPayment(contractId.value, payment.id, { status })
-    applyPaymentResponse(res)
-  } catch (e) {
-    paymentState.value.error = e?.response?.data?.message || 'Holatni yangilab bo\'lmadi'
-  }
-}
-
-async function handleDeletePayment(payment) {
-  if (!contractId.value || !payment?.id) return
-  if (!confirm("Ushbu to'lov davrini o'chirmoqchimisiz?")) return
-  try {
-    const res = await deleteContractPayment(contractId.value, payment.id)
-    applyPaymentResponse(res)
-  } catch (e) {
-    paymentState.value.error = e?.response?.data?.message || "O'chirishda xatolik"
-  }
-}
-
 function navigateBack() {
   router.push({ name: 'contracts' })
 }
@@ -208,7 +128,6 @@ onMounted(async () => {
       <div class="mb-4 flex flex-wrap gap-2">
         <BaseButton color="info" outline label="Orqaga" @click="navigateBack" />
         <BaseButton color="info" :disabled="loading" label="Yangilash" @click="refreshData" />
-        <BaseButton color="success" :disabled="paymentState.loading" label="To'lov davri qo'shish" @click="openPaymentModal" />
       </div>
 
       <div v-if="errorMsg" class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -274,7 +193,9 @@ onMounted(async () => {
       <CardBox class="mb-4" has-table>
         <div class="mb-3 flex items-center justify-between">
           <h2 class="text-lg font-semibold">To'lov davrlari</h2>
-          <BaseButton color="success" small :disabled="paymentState.loading" label="Davr qo'shish" @click="openPaymentModal" />
+          <div class="text-sm text-gray-500">
+            Faqat tasdiqlangan elektron to'lovlar bu jadvalni yangilaydi.
+          </div>
         </div>
         <div v-if="paymentState.loading" class="p-4 text-center text-sm text-gray-500">
           Yuklanmoqda...
@@ -287,12 +208,11 @@ onMounted(async () => {
               <th class="px-4 py-2 text-left">Summa</th>
               <th class="px-4 py-2 text-left">Tranzaksiya</th>
               <th class="px-4 py-2 text-left">Izoh</th>
-              <th class="px-4 py-2 text-right">Amal</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!paymentState.items.length">
-              <td colspan="6" class="px-4 py-6 text-center text-sm text-gray-500">Hozircha davrlar yo'q</td>
+              <td colspan="5" class="px-4 py-6 text-center text-sm text-gray-500">Hozircha davrlar yo'q</td>
             </tr>
             <tr v-for="payment in paymentState.items" :key="payment.id" class="border-t border-gray-100 dark:border-gray-800">
               <td class="px-4 py-2 text-sm">
@@ -300,16 +220,18 @@ onMounted(async () => {
                 <div class="text-xs text-gray-500">{{ formatDate(payment.periodEnd) }}</div>
               </td>
               <td class="px-4 py-2">
-                <select
-                  class="rounded border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-900"
-                  :class="paymentStatusColor(payment.status)"
-                  :value="payment.status"
-                  @change="handleStatusChange(payment, $event.target.value)"
+                <span
+                  :class="[
+                    'rounded-full px-3 py-1 text-xs font-semibold',
+                    payment.status === 'PAID'
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'
+                      : payment.status === 'PENDING'
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200'
+                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-200',
+                  ]"
                 >
-                  <option value="PAID">To'langan</option>
-                  <option value="PENDING">Jarayonda</option>
-                  <option value="REVERSED">Bekor qilingan</option>
-                </select>
+                  {{ paymentStatusLabel(payment.status) }}
+                </span>
               </td>
               <td class="px-4 py-2 text-sm">{{ payment.amount ?? contract?.shopMonthlyFee ?? '-' }}</td>
               <td class="px-4 py-2 text-sm">
@@ -320,15 +242,6 @@ onMounted(async () => {
                 <div v-else class="text-xs text-gray-500">Biriktirilmagan</div>
               </td>
               <td class="px-4 py-2 text-sm">{{ payment.notes || '-' }}</td>
-              <td class="px-4 py-2 text-right">
-                <BaseButton
-                  color="danger"
-                  small
-                  outline
-                  label="O'chirish"
-                  @click="handleDeletePayment(payment)"
-                />
-              </td>
             </tr>
           </tbody>
         </table>
@@ -359,34 +272,6 @@ onMounted(async () => {
           </table>
         </div>
       </CardBox>
-
-      <CardBoxModal
-        v-model="showPaymentModal"
-        has-cancel
-        :title="'Yangi to\'lov davri'"
-        button="success"
-        :button-label="submittingPayment ? 'Saqlanmoqda...' : 'Saqlash'"
-        :confirm-disabled="submittingPayment"
-        :close-on-confirm="false"
-        @confirm="submitPaymentForm"
-        @cancel="showPaymentModal = false"
-      >
-        <form class="space-y-4" @submit.prevent="submitPaymentForm">
-          <FormField label="Boshlanish sanasi (oy)">
-            <FormControl type="date" v-model="paymentForm.periodStart" />
-          </FormField>
-          <FormField label="Qamrab olingan oylar">
-            <FormControl type="number" min="1" max="12" v-model.number="paymentForm.months" />
-          </FormField>
-          <FormField label="Tranzaksiya ID (ixtiyoriy)">
-            <FormControl v-model="paymentForm.transactionId" placeholder="Tranzaksiya identifikatori" />
-          </FormField>
-          <FormField label="Izoh">
-            <FormControl v-model="paymentForm.notes" placeholder="Qo'shimcha izoh (ixtiyoriy)" />
-          </FormField>
-          <button type="submit" class="hidden" />
-        </form>
-      </CardBoxModal>
     </SectionMain>
   </LayoutAuthenticated>
 </template>

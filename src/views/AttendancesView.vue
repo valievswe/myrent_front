@@ -756,6 +756,7 @@ onMounted(async () => {
                   />
                 </th>
                 <th class="px-4 py-2 text-left">Rasta</th>
+                <th class="px-4 py-2 text-left">Bo'lim / Sotuv</th>
                 <th class="px-4 py-2 text-left">Maydon (kv m)</th>
                 <th class="px-4 py-2 text-left">Presskurant</th>
                 <th class="px-4 py-2 text-left">Hisoblangan</th>
@@ -765,10 +766,10 @@ onMounted(async () => {
             </thead>
             <tbody>
               <tr v-if="bulkLoading">
-                <td colspan="7" class="px-4 py-6 text-center">Yuklanmoqda...</td>
+                <td colspan="8" class="px-4 py-6 text-center">Yuklanmoqda...</td>
               </tr>
               <tr v-else-if="!stallsBulk.length">
-                <td colspan="7" class="px-4 py-6 text-center">Ma'lumot topilmadi</td>
+                <td colspan="8" class="px-4 py-6 text-center">Ma'lumot topilmadi</td>
               </tr>
               <template v-for="s in displayedStalls" :key="s.id">
                 <tr class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
@@ -785,6 +786,14 @@ onMounted(async () => {
                     </div>
                     <div class="text-xs text-gray-500 dark:text-gray-300">
                       ID: #{{ s.id }} • {{ s.description || 'Izoh yo\'q' }}
+                    </div>
+                  </td>
+                  <td class="px-4 py-2">
+                    <div class="text-sm font-medium">
+                      {{ s.Section?.name || 'Bo\'lim yo\'q' }}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                      {{ s.SaleType?.name || 'Sotuv turi yo\'q' }}
                     </div>
                   </td>
                   <td class="px-4 py-2">{{ s.area }}</td>
@@ -844,7 +853,7 @@ onMounted(async () => {
                   </td>
                 </tr>
                 <tr v-if="historyOpen[s.id]" class="bg-gray-50 dark:bg-gray-800/50">
-                  <td colspan="7" class="px-4 py-2">
+                  <td colspan="8" class="px-4 py-2">
                     <div class="mb-2 text-sm font-medium">Rasta to'lov tarixi (#{{ s.id }})</div>
                     <div v-if="historyLoading[s.id]" class="text-xs text-gray-500">
                       Yuklanmoqda...

@@ -75,6 +75,12 @@ const showShortSearchHint = computed(() => {
   return len > 0 && len < SEARCH_MIN_LENGTH
 })
 
+const currencyFormatter = new Intl.NumberFormat('uz-UZ', {
+  style: 'currency',
+  currency: 'UZS',
+  maximumFractionDigits: 0,
+})
+
 const showForm = ref(false)
 const editingId = ref(null)
 const form = ref({
@@ -173,6 +179,48 @@ function formatSnapshotDate(value) {
 function goToContractDetail(contract) {
   if (!contract?.id) return
   router.push({ name: 'contract-detail', params: { id: contract.id } })
+}
+
+function formatCurrency(value) {
+  if (value === null || value === undefined) return '-'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return value
+  return currencyFormatter.format(num)
+}
+
+function getLastPaidDate(contract) {
+  if (contract?.paymentSnapshot?.paidThrough) return contract.paymentSnapshot.paidThrough
+  const paidTx = (contract?.transactions || []).filter((tx) => tx.status === 'PAID')
+  if (!paidTx.length) return null
+  const latest = paidTx.reduce((acc, tx) => {
+    const ts = parseTashkentDate(tx.createdAt)
+    if (!acc) return ts
+    if (ts && (!acc || ts > acc)) return ts
+    return acc
+  }, null)
+  return latest
+}
+
+function getNextDueDate(contract) {
+  if (contract?.paymentSnapshot?.nextPeriodStart) return contract.paymentSnapshot.nextPeriodStart
+  const base = getLastPaidDate(contract)
+  if (!base) return null
+  const copy = new Date(base)
+  copy.setMonth(copy.getMonth() + 1)
+  return copy
+}
+
+function outstandingLabel(contract) {
+  const snap = contract?.paymentSnapshot
+  if (!snap) return contractPaidThisMonth(contract) ? "Joriy oy to'langan" : "To'lov kutilmoqda"
+  if (snap.monthsAhead > 0) return `${snap.monthsAhead} oy oldindan`
+  if (snap.monthsAhead === 0 && snap.hasCurrentPeriodPaid) return "Joriy oy to'langan"
+  return "To'lov kutilmoqda"
+}
+
+function statusBadge(contract) {
+  if (!contract?.isActive) return 'Arxiv'
+  return contractPaidThisMonth(contract) ? "Faol (to'langan)" : 'Faol'
 }
 
 function handleContractPayment(contract) {
@@ -708,13 +756,13 @@ async function exportContractTransactionsXLSX() {
           <table class="w-full table-auto">
             <thead>
               <tr>
-                <th class="px-4 py-2 text-left">Ega</th>
+                <th class="px-4 py-2 text-left">ID</th>
+                <th class="px-4 py-2 text-left">Ega / TIN</th>
                 <th class="px-4 py-2 text-left">Do'kon</th>
                 <th class="px-4 py-2 text-left">Oylik to'lov</th>
-                <th class="px-4 py-2 text-left">Berilgan</th>
-                <th class="px-4 py-2 text-left">Muddati</th>
-                <th class="px-4 py-2 text-left">Holati</th>
-                <th class="px-4 py-2 text-left">To'lov</th>
+                <th class="px-4 py-2 text-left">Oxirgi to'lov</th>
+                <th class="px-4 py-2 text-left">Navbatdagi</th>
+                <th class="px-4 py-2 text-left">Holat</th>
                 <th class="px-4 py-2 text-right">Amallar</th>
               </tr>
             </thead>
@@ -729,37 +777,48 @@ async function exportContractTransactionsXLSX() {
               </tr>
               <template v-else v-for="it in displayItems" :key="it.id">
                 <tr class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
+                  <td class="px-4 py-2 font-semibold">#{{ it.id }}</td>
                   <td class="px-4 py-2">
-                    {{ it.owner?.fullName || owners.find((o) => o.id === it.ownerId)?.fullName || it.ownerId }}
-                  </td>
-                  <td class="px-4 py-2">
-                    {{ it.store?.storeNumber || stores.find((s) => s.id === it.storeId)?.storeNumber || it.storeId }}
-                  </td>
-                  <td class="px-4 py-2">{{ it.shopMonthlyFee }}</td>
-                  <td class="px-4 py-2">{{ formatTashkentDate(it.issueDate) || '-' }}</td>
-                  <td class="px-4 py-2">
-                    {{ formatTashkentDate(it.expiryDate) || '-' }}
-                  </td>
-                  <td class="px-4 py-2">{{ it.isActive ? 'Faol' : 'Faol emas' }}</td>
-                  <td class="px-4 py-2">
-                    <div v-if="it.paymentSnapshot">
-                      <div class="text-sm font-medium text-gray-800 dark:text-gray-200">
-                        Oxirgi: {{ formatSnapshotDate(it.paymentSnapshot.paidThrough) }}
-                      </div>
-                      <div class="text-xs text-gray-500">
-                        Keyingi: {{ formatSnapshotDate(it.paymentSnapshot.nextPeriodStart) }}
-                        <span v-if="it.paymentSnapshot.monthsAhead > 0" class="ml-1 text-emerald-600">
-                          (+{{ it.paymentSnapshot.monthsAhead }} oy)
-                        </span>
-                      </div>
+                    <div class="font-medium">
+                      {{ it.owner?.fullName || owners.find((o) => o.id === it.ownerId)?.fullName || it.ownerId }}
                     </div>
-                    <div v-else>
-                      <span :class="(it.transactions || []).some(t => t.status === 'PAID') ? 'text-green-600' : 'text-red-600'">
-                        {{ (it.transactions || []).some(t => t.status === 'PAID') ? "To'langan" : 'Kutilmoqda' }}
-                      </span>
+                    <div class="text-xs text-gray-500">
+                      {{ it.owner?.tin || owners.find((o) => o.id === it.ownerId)?.tin || 'TIN yo\'q' }}
                     </div>
-                    <div v-if="contractPaidThisMonth(it)" class="text-xs text-emerald-600">
-                      Bu oy to'langan
+                    <div class="text-xs text-gray-500" v-if="it.owner?.phoneNumber">
+                      Tel: {{ it.owner.phoneNumber }}
+                    </div>
+                  </td>
+                  <td class="px-4 py-2">
+                    <div class="font-medium">
+                      {{ it.store?.storeNumber || stores.find((s) => s.id === it.storeId)?.storeNumber || it.storeId }}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                      {{ it.store?.description || stores.find((s) => s.id === it.storeId)?.description || 'Izoh yo\'q' }}
+                    </div>
+                  </td>
+                  <td class="px-4 py-2 font-semibold">
+                    {{ formatCurrency(it.shopMonthlyFee) }}
+                  </td>
+                  <td class="px-4 py-2">
+                    {{ formatTashkentDate(getLastPaidDate(it)) || '-' }}
+                  </td>
+                  <td class="px-4 py-2">
+                    {{ formatTashkentDate(getNextDueDate(it)) || '-' }}
+                  </td>
+                  <td class="px-4 py-2">
+                    <div
+                      :class="[
+                        'inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold',
+                        contractPaidThisMonth(it)
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200',
+                      ]"
+                    >
+                      {{ statusBadge(it) }}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                      {{ outstandingLabel(it) }}
                     </div>
                   </td>
                   <td class="px-4 py-2">
