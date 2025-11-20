@@ -17,6 +17,12 @@ const route = useRoute()
 const router = useRouter()
 const contractId = computed(() => Number(route.params.id))
 
+const currencyFormatter = new Intl.NumberFormat('uz-UZ', {
+  style: 'currency',
+  currency: 'UZS',
+  maximumFractionDigits: 0,
+})
+
 const contract = ref(null)
 const loading = ref(true)
 const errorMsg = ref('')
@@ -39,13 +45,6 @@ function storeNumber() {
   return c.store?.storeNumber || c.storeId
 }
 
-function paymentStatusColor(status) {
-  if (status === 'PAID') return 'text-emerald-600'
-  if (status === 'PENDING') return 'text-amber-600'
-  if (status === 'REVERSED') return 'text-red-500'
-  return 'text-gray-500'
-}
-
 function paymentStatusLabel(status) {
   switch (status) {
     case 'PAID':
@@ -62,6 +61,41 @@ function paymentStatusLabel(status) {
 function applyPaymentResponse(payload) {
   paymentState.value.items = payload?.items || []
   paymentState.value.snapshot = payload?.snapshot || null
+}
+
+function formatCurrency(value) {
+  if (value === null || value === undefined) return '-'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return value
+  return currencyFormatter.format(num)
+}
+
+function getLastPaidDate() {
+  if (paymentState.value.snapshot?.paidThrough) return paymentState.value.snapshot.paidThrough
+  const txs = (contract.value?.transactions || []).filter((tx) => tx.status === 'PAID')
+  if (!txs.length) return null
+  return txs.reduce((latest, tx) => {
+    const date = tx.createdAt ? new Date(tx.createdAt) : null
+    if (!date) return latest
+    if (!latest || date > latest) return date
+    return latest
+  }, null)
+}
+
+function getNextDueDate() {
+  if (paymentState.value.snapshot?.nextPeriodStart) return paymentState.value.snapshot.nextPeriodStart
+  const last = getLastPaidDate()
+  if (!last) return null
+  const clone = new Date(last)
+  clone.setMonth(clone.getMonth() + 1)
+  return clone
+}
+
+function outstandingLabel() {
+  const snapshot = paymentState.value.snapshot
+  if (snapshot?.monthsAhead > 0) return `${snapshot.monthsAhead} oy oldindan`
+  if (snapshot?.hasCurrentPeriodPaid) return "Joriy oy to'langan"
+  return "To'lov kutilmoqda"
 }
 
 async function loadContract() {
@@ -147,7 +181,7 @@ onMounted(async () => {
           </div>
           <div>
             <p class="text-sm text-gray-500">Oylik to'lov</p>
-            <p class="font-medium">{{ contract.shopMonthlyFee || '-' }}</p>
+            <p class="font-medium">{{ formatCurrency(contract.shopMonthlyFee) }}</p>
           </div>
           <div>
             <p class="text-sm text-gray-500">Holati</p>
@@ -169,11 +203,11 @@ onMounted(async () => {
         <div v-if="paymentState.snapshot" class="grid gap-4 md:grid-cols-3">
           <div>
             <p class="text-sm text-gray-500">Oxirgi to'lov</p>
-            <p class="font-semibold text-emerald-600">{{ formatDate(paymentState.snapshot.paidThrough) }}</p>
+            <p class="font-semibold text-emerald-600">{{ formatDate(getLastPaidDate()) }}</p>
           </div>
           <div>
             <p class="text-sm text-gray-500">Navbatdagi oy</p>
-            <p class="font-semibold">{{ formatDate(paymentState.snapshot.nextPeriodStart) }}</p>
+            <p class="font-semibold">{{ formatDate(getNextDueDate()) }}</p>
           </div>
           <div>
             <p class="text-sm text-gray-500">Oldindan qoplangan oylar</p>
@@ -184,6 +218,9 @@ onMounted(async () => {
         </div>
         <div v-else class="text-sm text-gray-500">
           Hozircha davrlar haqida ma'lumot yo'q.
+        </div>
+        <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">
+          Status: {{ outstandingLabel() }}
         </div>
         <div v-if="paymentState.error" class="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">
           {{ paymentState.error }}
