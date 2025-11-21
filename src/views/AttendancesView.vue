@@ -16,6 +16,7 @@ import {
   updateAttendance,
   deleteAttendance,
   getAttendancePayUrl,
+  getAttendanceHistory,
 } from '@/services/attendances'
 import { listStalls } from '@/services/stalls'
 import { listSections } from '@/services/sections'
@@ -42,6 +43,14 @@ const stalls = ref([])
 const stallSearch = ref('')
 const stallOptions = ref([])
 const selectedStallObj = ref(null)
+const detailModal = ref({
+  open: false,
+  stall: null,
+  loading: false,
+  items: [],
+  summary: null,
+  error: '',
+})
 const selectedStall = computed(
   () => selectedStallObj.value || stalls.value.find((s) => s.id === Number(form.value.stallId)),
 )
@@ -411,6 +420,34 @@ async function toggleHistory(stall) {
   historyOpen.value = { ...historyOpen.value, [id]: !open }
   if (!open && !historyByStall.value[id]) await loadHistory(id)
 }
+
+async function openDetail(stall) {
+  const record = attendanceByStall.value[stall.id]
+  detailModal.value.open = true
+  detailModal.value.loading = true
+  detailModal.value.error = ''
+  detailModal.value.stall = record?.Stall || stall
+  try {
+    if (!record?.id) throw new Error("Avval ushbu rastaga attendance yarating yoki tanlang")
+    const history = await getAttendanceHistory(record.id, { days: 30 })
+    detailModal.value.items = history.items || []
+    detailModal.value.summary = history.summary || null
+    detailModal.value.stall = {
+      ...detailModal.value.stall,
+      Section: { name: history.stallInfo?.sectionName || detailModal.value.stall?.Section?.name },
+      SaleType: { name: history.stallInfo?.saleType || detailModal.value.stall?.SaleType?.name },
+      stallNumber: history.stallInfo?.number || detailModal.value.stall?.stallNumber,
+      description: history.stallInfo?.description || detailModal.value.stall?.description,
+    }
+    detailModal.value.error = ''
+  } catch (e) {
+    detailModal.value.items = []
+    detailModal.value.summary = null
+    detailModal.value.error = e?.response?.data?.message || 'Tarixni yuklab bo\'lmadi'
+  } finally {
+    detailModal.value.loading = false
+  }
+}
 async function createOne(stall) {
   try {
     await createAttendance({ date: bulkDate.value, stallId: stall.id })
@@ -710,6 +747,104 @@ onMounted(async () => {
         </template>
       </CardBoxModal>
 
+      <CardBoxModal
+        v-model="detailModal.open"
+        has-cancel
+        :title="detailModal.stall ? `Rasta tafsilotlari (${detailModal.stall.stallNumber || '#' + detailModal.stall.id})` : 'Rasta tafsilotlari'"
+        :close-on-confirm="false"
+        :confirm-disabled="detailModal.loading"
+        button="info"
+        button-label="Yopish"
+        @confirm="detailModal.open = false"
+        @cancel="detailModal.open = false"
+      >
+        <div v-if="detailModal.error" class="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {{ detailModal.error }}
+        </div>
+        <div v-else-if="detailModal.loading" class="py-6 text-center text-sm text-gray-500">
+          Yuklanmoqda...
+        </div>
+        <div v-else>
+          <div class="mb-4 grid gap-4 md:grid-cols-2">
+            <div>
+              <p class="text-sm text-gray-500">Bo'lim</p>
+              <p class="font-medium">{{ detailModal.stall?.Section?.name || '—' }}</p>
+            </div>
+            <div>
+              <p class="text-sm text-gray-500">Sotuv turi</p>
+              <p class="font-medium">{{ detailModal.stall?.SaleType?.name || '—' }}</p>
+            </div>
+            <div>
+              <p class="text-sm text-gray-500">Maydon</p>
+              <p class="font-medium">{{ detailModal.stall?.area || '-' }} m²</p>
+            </div>
+            <div>
+              <p class="text-sm text-gray-500">Kunlik to'lov</p>
+              <p class="font-medium">{{ detailModal.stall?.dailyFee || '-' }}</p>
+            </div>
+          </div>
+          <div v-if="detailModal.summary" class="mb-4 grid gap-4 md:grid-cols-3">
+            <div>
+              <p class="text-sm text-gray-500">To'langan kunlar</p>
+              <p class="text-lg font-semibold text-emerald-600">{{ detailModal.summary.paid || 0 }}</p>
+            </div>
+            <div>
+              <p class="text-sm text-gray-500">To'lanmagan</p>
+              <p class="text-lg font-semibold text-red-600">{{ detailModal.summary.unpaid || 0 }}</p>
+            </div>
+            <div>
+              <p class="text-sm text-gray-500">To'langan summa</p>
+              <p class="text-lg font-semibold text-emerald-600">
+                {{ (detailModal.summary.amountPaid || 0).toLocaleString() }}
+              </p>
+            </div>
+          </div>
+          <div class="mb-3 text-sm text-gray-600 dark:text-gray-300">
+            Oxirgi 30 kun ichidagi tranzaksiyalar
+          </div>
+          <div v-if="!(detailModal.items || []).length" class="text-sm text-gray-500">
+            Tarix mavjud emas.
+          </div>
+          <div v-else class="overflow-x-auto">
+            <table class="w-full table-auto text-sm">
+              <thead>
+                <tr>
+                  <th class="px-3 py-2 text-left">Sana</th>
+                  <th class="px-3 py-2 text-left">Holat</th>
+                  <th class="px-3 py-2 text-left">Summasi</th>
+                  <th class="px-3 py-2 text-left">Tranzaksiya</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in detailModal.items" :key="item.id">
+                  <td class="px-3 py-2">{{ formatTashkentDate(item.date || item.createdAt) || '-' }}</td>
+                  <td class="px-3 py-2">
+                    <span
+                      :class="[
+                        'rounded-full px-2 py-0.5 text-xs font-semibold',
+                        item.status === 'PAID'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-amber-100 text-amber-700',
+                      ]"
+                    >
+                      {{ item.status }}
+                    </span>
+                  </td>
+                  <td class="px-3 py-2">{{ item.amount ?? '-' }}</td>
+                  <td class="px-3 py-2">
+                    <div v-if="item.transaction">
+                      <div class="font-semibold">{{ item.transaction.transactionId }}</div>
+                      <div class="text-xs text-gray-500">{{ formatTashkentDate(item.transaction.createdAt) || '-' }}</div>
+                    </div>
+                    <span v-else class="text-xs text-gray-500">-</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </CardBoxModal>
+
       <CardBox has-table>
         <div class="px-4 py-3">
           <div class="flex flex-wrap items-center gap-3">
@@ -842,14 +977,22 @@ onMounted(async () => {
                     <template v-else>
                       <span class="text-gray-500">-</span>
                     </template>
-                    <BaseButton
-                      color="info"
-                      small
-                      outline
-                      label="Tarix"
-                      class="ml-2"
-                      @click="toggleHistory(s)"
-                    />
+                      <BaseButton
+                        color="info"
+                        small
+                        outline
+                        label="Tarix"
+                        class="ml-2"
+                        @click="toggleHistory(s)"
+                      />
+                      <BaseButton
+                        color="info"
+                        small
+                        outline
+                        label="Batafsil"
+                        class="ml-2"
+                        @click="openDetail(s)"
+                      />
                   </td>
                 </tr>
                 <tr v-if="historyOpen[s.id]" class="bg-gray-50 dark:bg-gray-800/50">

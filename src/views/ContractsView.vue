@@ -61,6 +61,12 @@ const qrModal = ref({
   qrData: '',
   options: [],
 })
+const paymentConfirmModal = ref({
+  open: false,
+  contract: null,
+  url: '',
+  provider: '',
+})
 const refreshingContractId = ref(null)
 
 const SEARCH_MIN_LENGTH = 2
@@ -131,6 +137,12 @@ function resolveStore(contract) {
   if (contract?.store) return contract.store
   return stores.value.find((s) => s.id === contract?.storeId) || null
 }
+
+const paymentConfirmContract = computed(() => paymentConfirmModal.value.contract)
+const paymentConfirmStore = computed(() => {
+  if (!paymentConfirmContract.value) return null
+  return resolveStore(paymentConfirmContract.value)
+})
 
 function getPaymentUrl(contract) {
   const store = resolveStore(contract)
@@ -233,7 +245,21 @@ function handleContractPayment(contract) {
     alert("To'lov havolasi topilmadi")
     return
   }
-  openPayment(url)
+  const link = getPaymentLinks(contract)[0]
+  paymentConfirmModal.value.contract = contract
+  paymentConfirmModal.value.url = url
+  paymentConfirmModal.value.provider = link?.label || "onlayn to'lov"
+  paymentConfirmModal.value.open = true
+}
+
+function resetPaymentConfirmModal() {
+  paymentConfirmModal.value.open = false
+  paymentConfirmModal.value.contract = null
+  paymentConfirmModal.value.url = ''
+  paymentConfirmModal.value.provider = ''
+}
+
+function refreshContractsAfterPayment() {
   if (typeof window !== 'undefined') {
     window.setTimeout(() => {
       fetchData()
@@ -241,6 +267,14 @@ function handleContractPayment(contract) {
   } else {
     fetchData()
   }
+}
+
+function confirmContractPayment() {
+  const url = paymentConfirmModal.value.url
+  if (!url) return
+  resetPaymentConfirmModal()
+  openPayment(url)
+  refreshContractsAfterPayment()
 }
 
 async function fetchData() {
@@ -756,8 +790,7 @@ async function exportContractTransactionsXLSX() {
           <table class="w-full table-auto">
             <thead>
               <tr>
-                <th class="px-4 py-2 text-left">ID</th>
-                <th class="px-4 py-2 text-left">Ega / TIN</th>
+                <th class="px-4 py-2 text-left">Shartnoma / Ega</th>
                 <th class="px-4 py-2 text-left">Do'kon</th>
                 <th class="px-4 py-2 text-left">Oylik to'lov</th>
                 <th class="px-4 py-2 text-left">Oxirgi to'lov</th>
@@ -777,8 +810,8 @@ async function exportContractTransactionsXLSX() {
               </tr>
               <template v-else v-for="it in displayItems" :key="it.id">
                 <tr class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
-                  <td class="px-4 py-2 font-semibold">#{{ it.id }}</td>
-                  <td class="px-4 py-2">
+                  <td class="px-4 py-2 align-top">
+                    <div class="font-semibold text-sm text-gray-500">Shartnoma #{{ it.id }}</div>
                     <div class="font-medium">
                       {{ it.owner?.fullName || owners.find((o) => o.id === it.ownerId)?.fullName || it.ownerId }}
                     </div>
@@ -789,7 +822,7 @@ async function exportContractTransactionsXLSX() {
                       Tel: {{ it.owner.phoneNumber }}
                     </div>
                   </td>
-                  <td class="px-4 py-2">
+                  <td class="px-4 py-2 align-top">
                     <div class="font-medium">
                       {{ it.store?.storeNumber || stores.find((s) => s.id === it.storeId)?.storeNumber || it.storeId }}
                     </div>
@@ -797,16 +830,16 @@ async function exportContractTransactionsXLSX() {
                       {{ it.store?.description || stores.find((s) => s.id === it.storeId)?.description || 'Izoh yo\'q' }}
                     </div>
                   </td>
-                  <td class="px-4 py-2 font-semibold">
+                  <td class="px-4 py-2 font-semibold align-top">
                     {{ formatCurrency(it.shopMonthlyFee) }}
                   </td>
-                  <td class="px-4 py-2">
+                  <td class="px-4 py-2 align-top">
                     {{ formatTashkentDate(getLastPaidDate(it)) || '-' }}
                   </td>
-                  <td class="px-4 py-2">
+                  <td class="px-4 py-2 align-top">
                     {{ formatTashkentDate(getNextDueDate(it)) || '-' }}
                   </td>
-                  <td class="px-4 py-2">
+                  <td class="px-4 py-2 align-top">
                     <div
                       :class="[
                         'inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold',
@@ -821,8 +854,14 @@ async function exportContractTransactionsXLSX() {
                       {{ outstandingLabel(it) }}
                     </div>
                   </td>
-                  <td class="px-4 py-2">
+                  <td class="px-4 py-2 align-top">
                     <div class="flex flex-wrap justify-end gap-2">
+                      <BaseButton
+                        color="info"
+                        small
+                        label="Batafsil"
+                        @click="goToContractDetail(it)"
+                      />
                       <BaseButton
                         color="success"
                         small
@@ -837,13 +876,6 @@ async function exportContractTransactionsXLSX() {
                         label="Tahrirlash"
                         :disabled="contractPaidThisMonth(it)"
                         @click="openEdit(it)"
-                      />
-                      <BaseButton
-                        color="info"
-                        small
-                        outline
-                        label="Batafsil"
-                        @click="goToContractDetail(it)"
                       />
                       <BaseButton
                         small
@@ -907,6 +939,37 @@ async function exportContractTransactionsXLSX() {
           Qidiruv natijalari ko'rsatilmoqda ({{ displayTotal }})
         </div>
       </CardBox>
+
+      <CardBoxModal
+        v-model="paymentConfirmModal.open"
+        has-cancel
+        button="success"
+        button-label="Davom etish"
+        :confirm-disabled="!paymentConfirmModal.url"
+        title="To'lovni tasdiqlash"
+        @confirm="confirmContractPayment"
+        @cancel="resetPaymentConfirmModal"
+      >
+        <p class="text-sm text-gray-700 dark:text-gray-200">
+          Shartnoma #{{ paymentConfirmContract?.id || '—' }} bo'yicha onlayn to'lov sahifasiga o'tishni tasdiqlaysizmi?
+        </p>
+        <div
+          class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+        >
+          <div class="font-semibold">
+            {{ paymentConfirmStore?.storeNumber || paymentConfirmContract?.storeId || 'Do\'kon aniqlanmadi' }}
+          </div>
+          <div class="text-xs text-slate-500 dark:text-slate-300">
+            {{ paymentConfirmStore?.description || 'Izoh yo\'q' }}
+          </div>
+          <div class="mt-2 text-xs">
+            Oylik to'lov: <strong>{{ formatCurrency(paymentConfirmContract?.shopMonthlyFee) }}</strong>
+          </div>
+        </div>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+          Davom etish tugmasi {{ paymentConfirmModal.provider || "onlayn to'lov" }} sahifasini yangi oynada ochadi.
+        </p>
+      </CardBoxModal>
 
       <CardBoxModal
         v-model="contractHistoryModal.open"
