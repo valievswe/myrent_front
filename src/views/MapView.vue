@@ -689,12 +689,17 @@ async function submitAttendanceModal() {
   attendanceSaving.value = true
   attendanceModalError.value = ''
   try {
+    const targetDate = attendanceForm.value.date
     await createAttendance({
       stallId: activeStall.value.id,
       date: attendanceForm.value.date,
     })
     attendanceModalOpen.value = false
-    await fetchAttendanceForDate()
+    if (targetDate && targetDate !== date.value) {
+      date.value = targetDate
+    } else {
+      await fetchAttendanceForDate()
+    }
   } catch (e) {
     attendanceModalError.value =
       e?.response?.data?.message || e?.message || "Davomatni yaratib bo'lmadi"
