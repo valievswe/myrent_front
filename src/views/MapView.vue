@@ -255,19 +255,20 @@ async function fetchSaleTypesList() {
 
 async function fetchAttendanceForDate() {
   try {
-    const res = await listAttendances({
-      dateFrom: date.value,
-      dateTo: date.value,
-      page: 1,
-      limit: 5000,
+    const chunk = await fetchPaginated(listAttendances, {
+      baseParams: { dateFrom: date.value, dateTo: date.value },
+      pageSize: 1000,
+      maxPages: 100,
     })
     const map = {}
-    for (const a of res.data || []) {
+    for (const a of chunk || []) {
       if (!a?.stallId) continue
       map[a.stallId] = a
     }
     attendanceMap.value = map
-  } catch {}
+  } catch (e) {
+    console.error('Failed to load attendance for map view', e)
+  }
 }
 
 async function refreshAfterPayment() {
