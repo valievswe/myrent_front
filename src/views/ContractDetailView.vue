@@ -6,11 +6,7 @@ import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
 import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
-import {
-  getContract,
-  refreshContract,
-  listContractPayments,
-} from '@/services/contracts'\r\n  , manualContractPayment
+import { getContract, refreshContract, listContractPayments, manualContractPayment } from '@/services/contracts'
 import { formatTashkentDate } from '@/utils/time'
 
 const route = useRoute()
