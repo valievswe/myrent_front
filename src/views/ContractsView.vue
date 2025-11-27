@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { mdiRefresh, mdiQrcode, mdiHistory, mdiFileExcelBox } from '@mdi/js'
@@ -73,6 +73,18 @@ const refreshingContractId = ref(null)
 const SEARCH_MIN_LENGTH = 2
 const searchTerm = ref('')
 const searchResults = ref(null)
+// Form state
+const showForm = ref(false)
+const editingId = ref(null)
+const form = ref({
+  ownerId: null,
+  storeId: null,
+  shopMonthlyFee: null,
+  certificateNumber: '',
+  issueDate: '',
+  expiryDate: '',
+  isActive: true,
+})
 
 // Computed
 const searchActive = computed(() => (searchTerm.value || '').trim().length >= SEARCH_MIN_LENGTH)
@@ -158,9 +170,38 @@ function contractPaidThisMonth(contract) {
 function outstandingLabel(contract) {
   const snap = contract?.paymentSnapshot
   if (!snap) return contractPaidThisMonth(contract) ? "Joriy oy to'langan" : "To'lov kutilmoqda"
-  if (snap.monthsAhead > 0) return ${snap.monthsAhead} oy oldindan
+  if (snap.monthsAhead > 0) return `${snap.monthsAhead} oy oldindan`
   if (snap.monthsAhead === 0 && snap.hasCurrentPeriodPaid) return "Joriy oy to'langan"
   return "To'lov kutilmoqda"
+}
+function isContractExpired(contract) {
+  if (!contract?.expiryDate) return false
+  const exp = parseTashkentDate(contract.expiryDate)
+  if (!exp) return false
+  const today = startOfTashkentDay() || new Date()
+  return exp < today
+}
+// Derive last paid and next due dates (fallbacks when snapshot not present)
+function getLastPaidDate(contract) {
+  if (contract?.paymentSnapshot?.paidThrough) return contract.paymentSnapshot.paidThrough
+  const paidTx = (contract?.transactions || []).filter((tx) => tx.status === 'PAID')
+  if (!paidTx.length) return null
+  const latest = paidTx.reduce((acc, tx) => {
+    const ts = parseTashkentDate(tx.createdAt)
+    if (!acc) return ts
+    if (ts && (!acc || ts > acc)) return ts
+    return acc
+  }, null)
+  return latest
+}
+
+function getNextDueDate(contract) {
+  if (contract?.paymentSnapshot?.nextPeriodStart) return contract.paymentSnapshot.nextPeriodStart
+  const base = getLastPaidDate(contract)
+  if (!base) return null
+  const copy = new Date(base)
+  copy.setMonth(copy.getMonth() + 1)
+  return copy
 }
 
 function statusBadge(contract) {
@@ -272,7 +313,7 @@ async function runSearch() {
       const fields = [
         owner.fullName,
         owner.tin,
-        owner.phone,
+        owner.phoneNumber,
         store.storeNumber,
         store.description,
         c.certificateNumber,
@@ -334,6 +375,26 @@ function openEdit(it) {
     isActive: typeof it.isActive === 'boolean' ? it.isActive : true,
   }
   showForm.value = true
+}
+function selectOwner(o) {
+  form.value.ownerId = o?.id ?? null
+  ownerSearch.value = o ? `${o.fullName} (${o.tin})` : ''
+  ownerOptions.value = []
+}
+function clearOwner() {
+  form.value.ownerId = null
+  ownerSearch.value = ''
+  ownerOptions.value = []
+}
+function selectStore(s) {
+  form.value.storeId = s?.id ?? null
+  storeSearch.value = s ? `${s.storeNumber}` : ''
+  storeOptions.value = []
+}
+function clearStore() {
+  form.value.storeId = null
+  storeSearch.value = ''
+  storeOptions.value = []
 }
 
 async function submitForm() {
@@ -456,6 +517,85 @@ const contractHistorySummary = computed(() => {
   )
 })
 
+
+async function exportContractsXLSX() {
+  loading.value = true
+  try {
+    const headers = [
+      'ID',
+      'Ega',
+      "Do'kon",
+      'Oylik',
+      'Berilgan',
+      'Tugash',
+      'Faol',
+      'Tranzaksiya soni',
+      "Oxirgi to'lov sana",
+      'Jami tolangan',
+    ]
+    const rows = []
+    let p = 1
+    const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
+    while (true) {
+      const res = await listContracts({ page: p, limit: 100, isActive })
+      const arr = res.data || []
+      for (const c of arr) {
+        const tx = c.transactions || []
+        const paid = tx.filter((t) => t.status === 'PAID')
+        const last = paid.sort((a, b) => (parseTashkentDate(b.createdAt)?.getTime() || 0) - (parseTashkentDate(a.createdAt)?.getTime() || 0))[0]
+        const totalPaid = paid.reduce((sum, t) => sum + Number((t.amount && t.amount.toString()) || 0), 0)
+        rows.push([
+          c.id,
+          c.owner?.fullName || c.ownerId,
+          c.store?.storeNumber || c.storeId,
+          c.shopMonthlyFee ?? '',
+          formatTashkentDateISO(c.issueDate) || '',
+          formatTashkentDateISO(c.expiryDate) || '',
+          c.isActive ? 'Ha' : "Yo'q",
+          tx.length,
+          last ? formatTashkentDateISO(last.createdAt) : '',
+          totalPaid,
+        ])
+      }
+      if (arr.length < 100) break
+      p++
+    }
+    downloadXLSX(`contracts_${getTashkentTodayISO()}.xlsx`, headers, rows, 'Contracts')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function exportContractTransactionsXLSX() {
+  loading.value = true
+  try {
+    const headers = ['ContractID', 'Ega', "Do'kon", 'Sana', 'Summasi', 'Holat']
+    const rows = []
+    let p = 1
+    const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
+    while (true) {
+      const res = await listContracts({ page: p, limit: 100, isActive })
+      const arr = res.data || []
+      for (const c of arr) {
+        for (const t of (c.transactions || [])) {
+          rows.push([
+            c.id,
+            c.owner?.fullName || c.ownerId,
+            c.store?.storeNumber || c.storeId,
+            formatTashkentDateISO(t.createdAt) || '',
+            t.amount ?? '',
+            t.status,
+          ])
+        }
+      }
+      if (arr.length < 100) break
+      p++
+    }
+    downloadXLSX(`contract_transactions_${getTashkentTodayISO()}.xlsx`, headers, rows, 'Transactions')
+  } finally {
+    loading.value = false
+  }
+}
 function downloadContractHistory() {
   const items = contractHistoryModal.value.items || []
   if (!items.length) return
@@ -465,12 +605,11 @@ function downloadContractHistory() {
     tx.amount ?? '',
     tx.status,
     tx.transactionId || tx.id,
-    contractHistoryModal.value.owner?.name || '',
-    contractHistoryModal.value.store?.number || '',
+    contractHistoryModal.value.owner?.fullName || '',
+    contractHistoryModal.value.store?.storeNumber || '',
   ])
-  downloadXLSX(contract__history.xlsx, headers, rows, 'Tarix')
+  downloadXLSX(`contract_${contractHistoryModal.value.contractId}_history.xlsx`, headers, rows, 'Tarix')
 }
-
 async function openQrCode(contract, provider) {
   const options = getPaymentLinks(contract)
   if (!options.length) {
@@ -548,8 +687,8 @@ async function fetchStoreOptions(q) {
     )
     if (qq && occupiedMatches.length) {
       const nums = occupiedMatches.slice(0, 3).map((s) => s.storeNumber || s.id).join(', ')
-      const more = occupiedMatches.length > 3 ?  va yana  ta : ''
-      storeInfoMsg.value = Qidiruvga mos do'kon(lar) band:
+      const more = occupiedMatches.length > 3 ? ` va yana ${occupiedMatches.length - 3} ta` : ''
+      storeInfoMsg.value = `Qidiruvga mos do'kon(lar) band: ${nums}${more}`
     } else {
       storeInfoMsg.value = ''
     }
@@ -561,10 +700,25 @@ watch(ownerSearch, (q) => {
   ownerDebounceId = setTimeout(() => fetchOwnerOptions(q?.trim() || ''), 250)
 })
 
+let storeDebounceId
 watch(storeSearch, (q) => {
   if (storeDebounceId) clearTimeout(storeDebounceId)
   storeDebounceId = setTimeout(() => fetchStoreOptions(q?.trim() || ''), 250)
 })
+
+
+
+function handlePageChange(newPage) {
+  if (loading.value || page.value === newPage) return
+  page.value = newPage
+  fetchData()
+}
+function handleLimitChange(newLimit) {
+  if (loading.value || limit.value === newLimit) return
+  limit.value = newLimit
+  page.value = 1
+  fetchData()
+}
 
 let searchDebounceId
 watch(searchTerm, (q) => {
@@ -726,6 +880,12 @@ function isStoreOccupied(s) {
                       {{ statusBadge(it) }}
                     </div>
                     <div class="text-xs text-gray-500">{{ outstandingLabel(it) }}</div>
+                    <div
+                      v-if="isContractExpired(it)"
+                      class="mt-1 inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-200"
+                    >
+                      Muddat tugagan
+                    </div>
                   </td>
                   <td class="px-4 py-2 align-top">
                     <div class="flex flex-wrap justify-end gap-2">
@@ -826,7 +986,7 @@ function isStoreOccupied(s) {
         @cancel="resetPaymentConfirmModal"
       >
         <p class="text-sm text-gray-700 dark:text-gray-200">
-          Shartnoma #{{ paymentConfirmContract?.id || '—' }} bo'yicha onlayn to'lov sahifasiga
+          Shartnoma #{{ paymentConfirmContract?.id || 'вЂ”' }} bo'yicha onlayn to'lov sahifasiga
           o'tishni tasdiqlaysizmi?
         </p>
         <div
@@ -840,7 +1000,7 @@ function isStoreOccupied(s) {
             }}
           </div>
           <div class="text-xs text-slate-500 dark:text-slate-300">
-            {{ paymentConfirmStore?.description || "Izoh yo'q" }}
+                {{ contractHistoryModal.store?.description || "Izoh yo'q" }}
           </div>
           <div class="mt-2 text-xs">
             Oylik to'lov:
@@ -872,11 +1032,11 @@ function isStoreOccupied(s) {
               class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
             >
               <div class="font-semibold">
-                {{ contractHistoryModal.owner?.name || 'Ega noma’lum' }}
+                {{ contractHistoryModal.owner?.fullName || "Ega noma'lum" }}
               </div>
               <div class="text-xs text-slate-500 dark:text-slate-300">
-                Do'kon: {{ contractHistoryModal.store?.number || '-' }} •
-                {{ contractHistoryModal.store?.description || 'Izoh yo‘q' }}
+                Do'kon: {{ contractHistoryModal.store?.storeNumber || '-' }} •
+                {{ contractHistoryModal.store?.description || "Izoh yo'q" }}
               </div>
             </div>
             <div class="flex flex-wrap items-center gap-3">
