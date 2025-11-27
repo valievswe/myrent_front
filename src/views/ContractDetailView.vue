@@ -6,7 +6,12 @@ import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
 import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
-import { getContract, refreshContract, listContractPayments, manualContractPayment } from '@/services/contracts'
+import {
+  getContract,
+  refreshContract,
+  listContractPayments,
+  manualContractPayment,
+} from '@/services/contracts'
 import { formatTashkentDate } from '@/utils/time'
 
 const route = useRoute()
@@ -36,13 +41,21 @@ const manualModal = ref({
   startMonth: '',
   months: null,
   amount: null,
-  notes: ''
+  notes: '',
 })
 const manualSubmitting = ref(false)
 const manualError = ref('')
 
 function openManualModal() {
-  manualModal.value = { open: true, transferNumber: '', transferDate: '', startMonth: '', months: null, amount: null, notes: '' }
+  manualModal.value = {
+    open: true,
+    transferNumber: '',
+    transferDate: '',
+    startMonth: '',
+    months: null,
+    amount: null,
+    notes: '',
+  }
   manualError.value = ''
 }
 
@@ -68,7 +81,7 @@ async function submitManual() {
     manualModal.value.open = false
     await loadContract()
   } catch (e) {
-    manualError.value = e?.response?.data?.message || 'Qo\'lda to\'lovni qayd etib bo\'lmadi'
+    manualError.value = e?.response?.data?.message || "Qo'lda to'lovni qayd etib bo'lmadi"
   } finally {
     manualSubmitting.value = false
   }
@@ -123,7 +136,8 @@ function getLastPaidDate() {
 }
 
 function getNextDueDate() {
-  if (paymentState.value.snapshot?.nextPeriodStart) return paymentState.value.snapshot.nextPeriodStart
+  if (paymentState.value.snapshot?.nextPeriodStart)
+    return paymentState.value.snapshot.nextPeriodStart
   const last = getLastPaidDate()
   if (!last) return null
   const clone = new Date(last)
@@ -146,7 +160,7 @@ async function loadContract() {
     const data = await getContract(contractId.value)
     contract.value = data
   } catch (e) {
-    errorMsg.value = e?.response?.data?.message || 'Shartnomani yuklab bo\'lmadi'
+    errorMsg.value = e?.response?.data?.message || "Shartnomani yuklab bo'lmadi"
   } finally {
     loading.value = false
   }
@@ -174,7 +188,7 @@ async function refreshData() {
     contract.value = fresh
     await loadPayments()
   } catch (e) {
-    errorMsg.value = e?.response?.data?.message || 'Holatni yangilab bo\'lmadi'
+    errorMsg.value = e?.response?.data?.message || "Holatni yangilab bo'lmadi"
   } finally {
     loading.value = false
   }
@@ -202,7 +216,12 @@ onMounted(async () => {
       <div class="mb-4 flex flex-wrap gap-2">
         <BaseButton color="info" outline label="Orqaga" @click="navigateBack" />
         <BaseButton color="info" :disabled="loading" label="Yangilash" @click="refreshData" />
-        <BaseButton color='success' :disabled='loading' label='Qo''lda to''lov' @click='openManualModal' />
+        <BaseButton
+          color="success"
+          :disabled="loading"
+          label="Qo'lda to'lov"
+          @click="openManualModal"
+        />
       </div>
 
       <div v-if="errorMsg" class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -252,18 +271,17 @@ onMounted(async () => {
           </div>
           <div>
             <p class="text-sm text-gray-500">Oldindan qoplangan oylar</p>
-            <p class="font-semibold">
-              {{ paymentState.snapshot.monthsAhead || 0 }} oy
-            </p>
+            <p class="font-semibold">{{ paymentState.snapshot.monthsAhead || 0 }} oy</p>
           </div>
         </div>
-        <div v-else class="text-sm text-gray-500">
-          Hozircha davrlar haqida ma'lumot yo'q.
-        </div>
+        <div v-else class="text-sm text-gray-500">Hozircha davrlar haqida ma'lumot yo'q.</div>
         <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">
           Status: {{ outstandingLabel() }}
         </div>
-        <div v-if="paymentState.error" class="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">
+        <div
+          v-if="paymentState.error"
+          class="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800"
+        >
           {{ paymentState.error }}
         </div>
       </CardBox>
@@ -290,9 +308,15 @@ onMounted(async () => {
           </thead>
           <tbody>
             <tr v-if="!paymentState.items.length">
-              <td colspan="5" class="px-4 py-6 text-center text-sm text-gray-500">Hozircha davrlar yo'q</td>
+              <td colspan="5" class="px-4 py-6 text-center text-sm text-gray-500">
+                Hozircha davrlar yo'q
+              </td>
             </tr>
-            <tr v-for="payment in paymentState.items" :key="payment.id" class="border-t border-gray-100 dark:border-gray-800">
+            <tr
+              v-for="payment in paymentState.items"
+              :key="payment.id"
+              class="border-t border-gray-100 dark:border-gray-800"
+            >
               <td class="px-4 py-2 text-sm">
                 <div>{{ formatDate(payment.periodStart) }}</div>
                 <div class="text-xs text-gray-500">{{ formatDate(payment.periodEnd) }}</div>
@@ -311,11 +335,15 @@ onMounted(async () => {
                   {{ paymentStatusLabel(payment.status) }}
                 </span>
               </td>
-              <td class="px-4 py-2 text-sm">{{ payment.amount ?? contract?.shopMonthlyFee ?? '-' }}</td>
+              <td class="px-4 py-2 text-sm">
+                {{ payment.amount ?? contract?.shopMonthlyFee ?? '-' }}
+              </td>
               <td class="px-4 py-2 text-sm">
                 <div v-if="payment.transaction">
                   <div class="font-semibold">{{ payment.transaction.transactionId }}</div>
-                  <div class="text-xs text-gray-500">{{ formatDate(payment.transaction.createdAt) }}</div>
+                  <div class="text-xs text-gray-500">
+                    {{ formatDate(payment.transaction.createdAt) }}
+                  </div>
                 </div>
                 <div v-else class="text-xs text-gray-500">Biriktirilmagan</div>
               </td>
@@ -339,7 +367,11 @@ onMounted(async () => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="tx in contract.transactions" :key="tx.id" class="border-t border-gray-100 dark:border-gray-800">
+              <tr
+                v-for="tx in contract.transactions"
+                :key="tx.id"
+                class="border-t border-gray-100 dark:border-gray-800"
+              >
                 <td class="px-4 py-2 font-semibold">{{ tx.transactionId }}</td>
                 <td class="px-4 py-2">{{ tx.amount }}</td>
                 <td class="px-4 py-2">{{ tx.status }}</td>
@@ -350,40 +382,85 @@ onMounted(async () => {
           </table>
         </div>
       </CardBox>
-    
+
       <CardBox v-if="manualModal.open" class="mb-4">
         <h2 class="mb-2 text-lg font-semibold">Qo'lda to'lovni qayd etish</h2>
         <div class="grid gap-4 md:grid-cols-2">
           <div>
             <p class="text-sm text-gray-500">O'tkazma raqami (majburiy)</p>
-            <input v-model="manualModal.transferNumber" class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100" placeholder="Masalan: TR-2025-000123" />
+            <input
+              v-model="manualModal.transferNumber"
+              class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100"
+              placeholder="Masalan: TR-2025-000123"
+            />
           </div>
           <div>
             <p class="text-sm text-gray-500">O'tkazma sana/vaqt</p>
-            <input type="datetime-local" v-model="manualModal.transferDate" class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100" />
+            <input
+              type="datetime-local"
+              v-model="manualModal.transferDate"
+              class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100"
+            />
           </div>
           <div>
             <p class="text-sm text-gray-500">Boshlanish oyi (YYYY-MM)</p>
-            <input type="month" v-model="manualModal.startMonth" class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100" />
+            <input
+              type="month"
+              v-model="manualModal.startMonth"
+              class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100"
+            />
           </div>
           <div>
             <p class="text-sm text-gray-500">Oylarda</p>
-            <input type="number" min="1" max="24" v-model.number="manualModal.months" class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100" placeholder="Masalan: 1" />
+            <input
+              type="number"
+              min="1"
+              max="24"
+              v-model.number="manualModal.months"
+              class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100"
+              placeholder="Masalan: 1"
+            />
           </div>
           <div>
             <p class="text-sm text-gray-500">Yoki summa (so'm)</p>
-            <input type="number" min="0" step="1" v-model.number="manualModal.amount" class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100" placeholder="Masalan: 3000000" />
+            <input
+              type="number"
+              min="0"
+              step="1"
+              v-model.number="manualModal.amount"
+              class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100"
+              placeholder="Masalan: 3000000"
+            />
           </div>
           <div>
             <p class="text-sm text-gray-500">Izoh</p>
-            <input v-model="manualModal.notes" class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100" />
+            <input
+              v-model="manualModal.notes"
+              class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100"
+            />
           </div>
         </div>
-        <div v-if="manualError" class="mt-2 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{{ manualError }}</div>
-        <div class="mt-3 flex gap-2">
-          <BaseButton :disabled="manualSubmitting" color="success" :label="manualSubmitting ? 'Saqlanmoqda...' : 'Saqlash'" @click="submitManual" />
-          <BaseButton :disabled="manualSubmitting" color="info" outline label="Bekor qilish" @click="manualModal.open = false" />
+        <div
+          v-if="manualError"
+          class="mt-2 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700"
+        >
+          {{ manualError }}
         </div>
-      </CardBox></SectionMain>
+        <div class="mt-3 flex gap-2">
+          <BaseButton
+            :disabled="manualSubmitting"
+            color="success"
+            :label="manualSubmitting ? 'Saqlanmoqda...' : 'Saqlash'"
+            @click="submitManual"
+          />
+          <BaseButton
+            :disabled="manualSubmitting"
+            color="info"
+            outline
+            label="Bekor qilish"
+            @click="manualModal.open = false"
+          />
+        </div> </CardBox
+    ></SectionMain>
   </LayoutAuthenticated>
 </template>
