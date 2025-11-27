@@ -46,3 +46,8 @@ export async function listContractPayments(id) {
   const { data } = await http.get(`/contracts/${id}/payments`)
   return data
 }
+
+export async function manualContractPayment(id, payload) {
+  const { data } = await http.post(`/contracts/${id}/payments/manual`, payload)
+  return data
+}

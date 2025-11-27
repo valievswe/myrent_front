@@ -10,7 +10,7 @@ import {
   getContract,
   refreshContract,
   listContractPayments,
-} from '@/services/contracts'
+} from '@/services/contracts'\r\n  , manualContractPayment
 import { formatTashkentDate } from '@/utils/time'
 
 const route = useRoute()
@@ -33,6 +33,50 @@ const paymentState = ref({
   items: [],
   snapshot: null,
 })
+const manualModal = ref({
+  open: false,
+  transferNumber: '',
+  transferDate: '',
+  startMonth: '',
+  months: null,
+  amount: null,
+  notes: ''
+})
+const manualSubmitting = ref(false)
+const manualError = ref('')
+
+function openManualModal() {
+  manualModal.value = { open: true, transferNumber: '', transferDate: '', startMonth: '', months: null, amount: null, notes: '' }
+  manualError.value = ''
+}
+
+async function submitManual() {
+  if (!contractId.value) return
+  manualError.value = ''
+  const dto = {
+    transferNumber: (manualModal.value.transferNumber || '').trim(),
+    transferDate: manualModal.value.transferDate || undefined,
+    startMonth: manualModal.value.startMonth || undefined,
+    months: manualModal.value.months ? Number(manualModal.value.months) : undefined,
+    amount: manualModal.value.amount ? Number(manualModal.value.amount) : undefined,
+    notes: (manualModal.value.notes || '').trim() || undefined,
+  }
+  if (!dto.transferNumber) {
+    manualError.value = "O'tkazma raqami majburiy"
+    return
+  }
+  manualSubmitting.value = true
+  try {
+    const result = await manualContractPayment(contractId.value, dto)
+    applyPaymentResponse(result)
+    manualModal.value.open = false
+    await loadContract()
+  } catch (e) {
+    manualError.value = e?.response?.data?.message || 'Qo\'lda to\'lovni qayd etib bo\'lmadi'
+  } finally {
+    manualSubmitting.value = false
+  }
+}
 function ownerName() {
   const c = contract.value
   if (!c) return '-'
@@ -162,6 +206,7 @@ onMounted(async () => {
       <div class="mb-4 flex flex-wrap gap-2">
         <BaseButton color="info" outline label="Orqaga" @click="navigateBack" />
         <BaseButton color="info" :disabled="loading" label="Yangilash" @click="refreshData" />
+        <BaseButton color='success' :disabled='loading' label='Qo''lda to''lov' @click='openManualModal' />
       </div>
 
       <div v-if="errorMsg" class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -309,6 +354,40 @@ onMounted(async () => {
           </table>
         </div>
       </CardBox>
-    </SectionMain>
+    
+      <CardBox v-if="manualModal.open" class="mb-4">
+        <h2 class="mb-2 text-lg font-semibold">Qo'lda to'lovni qayd etish</h2>
+        <div class="grid gap-4 md:grid-cols-2">
+          <div>
+            <p class="text-sm text-gray-500">O'tkazma raqami (majburiy)</p>
+            <input v-model="manualModal.transferNumber" class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100" placeholder="Masalan: TR-2025-000123" />
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">O'tkazma sana/vaqt</p>
+            <input type="datetime-local" v-model="manualModal.transferDate" class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100" />
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Boshlanish oyi (YYYY-MM)</p>
+            <input type="month" v-model="manualModal.startMonth" class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100" />
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Oylarda</p>
+            <input type="number" min="1" max="24" v-model.number="manualModal.months" class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100" placeholder="Masalan: 1" />
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Yoki summa (so'm)</p>
+            <input type="number" min="0" step="1" v-model.number="manualModal.amount" class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100" placeholder="Masalan: 3000000" />
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Izoh</p>
+            <input v-model="manualModal.notes" class="w-full rounded border px-2 py-1 dark:bg-gray-900 dark:text-gray-100" />
+          </div>
+        </div>
+        <div v-if="manualError" class="mt-2 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{{ manualError }}</div>
+        <div class="mt-3 flex gap-2">
+          <BaseButton :disabled="manualSubmitting" color="success" :label="manualSubmitting ? 'Saqlanmoqda...' : 'Saqlash'" @click="submitManual" />
+          <BaseButton :disabled="manualSubmitting" color="info" outline label="Bekor qilish" @click="manualModal.open = false" />
+        </div>
+      </CardBox></SectionMain>
   </LayoutAuthenticated>
 </template>

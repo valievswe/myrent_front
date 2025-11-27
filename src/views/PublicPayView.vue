@@ -399,6 +399,7 @@ watch(
                   </div>
 
                   <div class="flex flex-col items-end gap-2 text-right">
+                    <span v-if="entry.expired" class="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-200">Muddat tugagan</span>
                     <span
                       :class="[
                         'rounded-full px-3 py-1 text-xs font-semibold',
@@ -525,6 +526,7 @@ watch(
                   </div>
 
                   <div class="flex flex-col items-end gap-2 text-right">
+                    <span v-if="entry.expired" class="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-200">Muddat tugagan</span>
                     <span
                       :class="[
                         'rounded-full px-3 py-1 text-xs font-semibold',

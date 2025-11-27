@@ -32,6 +32,7 @@ const page = ref(1)
 const limit = ref(10)
 const total = ref(0)
 const statusFilter = ref('active')
+const paidFilter = ref('all')
 
 const owners = ref([])
 const stores = ref([])
@@ -282,7 +283,8 @@ async function fetchData() {
   errorMsg.value = ''
   try {
     const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
-    const res = await listContracts({ page: page.value, limit: limit.value, isActive })
+    const paid = paidFilter.value === 'all' ? undefined : paidFilter.value
+    const res = await listContracts({ page: page.value, limit: limit.value, isActive, paid })
     items.value = res.data
     total.value = res.pagination?.total ?? items.value.length
   } catch (e) {
@@ -305,11 +307,12 @@ async function runSearch() {
     const chunkSize = 100
     const maxPages = 20
     const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
+    const paid = paidFilter.value === 'all' ? undefined : paidFilter.value
     let pageCursor = 1
     let totalAvailable = Infinity
 
     while (pageCursor <= maxPages) {
-      const res = await listContracts({ page: pageCursor, limit: chunkSize, isActive })
+      const res = await listContracts({ page: pageCursor, limit: chunkSize, isActive, paid })
       const data = res.data || []
       matches.push(...data)
       const reportedTotal = res.pagination?.total ?? res.total ?? null
@@ -576,6 +579,18 @@ onMounted(async () => {
   try { await fetchStoreOptions(storeSearch.value?.trim() || '') } catch {}
 })
 watch(statusFilter, async () => {
+.value = 1
+if (searchActive.value) await runSearch()
+else await fetchData()
+})
+
+watch(paidFilter, async () => {
+  page.value = 1
+  if (searchActive.value) await runSearch()
+  else await fetchData()
+})
+
+watch(statusFilter, async () => {
   page.value = 1
   if (searchActive.value) await runSearch()
   else await fetchData()
@@ -680,6 +695,7 @@ async function exportContractsXLSX() {
     const rows = []
     let p = 1
     const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
+    const paid = paidFilter.value === 'all' ? undefined : paidFilter.value
     while (true) {
       const res = await listContracts({ page: p, limit: 100, isActive })
       const arr = res.data || []
@@ -721,6 +737,7 @@ async function exportContractTransactionsXLSX() {
     const rows = []
     let p = 1
     const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
+    const paid = paidFilter.value === 'all' ? undefined : paidFilter.value
     while (true) {
       const res = await listContracts({ page: p, limit: 100, isActive })
       const arr = res.data || []
@@ -759,6 +776,13 @@ async function exportContractTransactionsXLSX() {
         <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div class="flex flex-wrap items-end gap-3">
             <FormField label="Holati">
+            <FormField label="To'lov holati">
+              <select v-model="paidFilter" class="rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100">
+                <option value="all">Barchasi</option>
+                <option value="paid">To'langan</option>
+                <option value="unpaid">To'lanmagan</option>
+              </select>
+            </FormField>
               <select v-model="statusFilter" class="rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100">
                 <option value="active">Faol</option>
                 <option value="archived">Arxivlangan</option>
