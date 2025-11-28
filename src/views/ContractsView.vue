@@ -141,11 +141,27 @@ const currencyFormatter = new Intl.NumberFormat('uz-UZ', {
   currency: 'UZS',
   maximumFractionDigits: 0,
 })
+const currencyFormatterWithFrac = new Intl.NumberFormat('uz-UZ', {
+  style: 'currency',
+  currency: 'UZS',
+  maximumFractionDigits: 2,
+})
 
 const paymentConfirmContract = computed(() => paymentConfirmModal.value.contract)
 const paymentConfirmStore = computed(() => {
   if (!paymentConfirmContract.value) return null
   return resolveStore(paymentConfirmContract.value)
+})
+
+function getMonthlyFee(contract) {
+  const fee = Number(contract?.shopMonthlyFee)
+  return Number.isFinite(fee) ? fee : 0
+}
+
+const manualComputedTotal = computed(() => {
+  const fee = getMonthlyFee(manualPaymentModal.value.contract)
+  const months = Number(manualPaymentModal.value.form.months) || 1
+  return fee * months
 })
 
 // Helpers
@@ -154,6 +170,13 @@ function formatCurrency(value) {
   const num = Number(value)
   if (!Number.isFinite(num)) return value
   return currencyFormatter.format(num)
+}
+
+function formatCurrencyDetailed(value) {
+  if (value === null || value === undefined) return '-'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return value
+  return currencyFormatterWithFrac.format(num)
 }
 
 
@@ -242,6 +265,7 @@ function contractActions(contract) {
       label: "Qo'lda to'lov",
       icon: mdiBankTransfer,
       hint: 'Bank kvitansiyasi',
+      disabled: paid || !contract.isActive,
       onClick: () => openManualPayment(contract),
     },
     {
@@ -587,7 +611,6 @@ async function submitManualPayment() {
     const payload = {
       transferNumber: modal.form.transferNumber,
       transferDate: modal.form.transferDate || undefined,
-      amount: modal.form.amount ? Number(modal.form.amount) : undefined,
       months: modal.form.months ? Number(modal.form.months) : undefined,
       startMonth: modal.form.startMonth || undefined,
       notes: modal.form.notes || undefined,
@@ -1140,25 +1163,17 @@ function isStoreOccupied(s) {
           <FormField label="To'lov sanasi">
             <FormControl v-model="manualPaymentModal.form.transferDate" type="date" />
           </FormField>
-          <div class="grid gap-3 md:grid-cols-2">
-            <FormField label="Summa (UZS)">
-              <FormControl
-                v-model.number="manualPaymentModal.form.amount"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="500000"
-              />
-            </FormField>
-            <FormField label="Oylar soni">
-              <FormControl
-                v-model.number="manualPaymentModal.form.months"
-                type="number"
-                min="1"
-                step="1"
-                placeholder="1"
-              />
-            </FormField>
+          <FormField label="Oylar soni">
+            <FormControl
+              v-model.number="manualPaymentModal.form.months"
+              type="number"
+              min="1"
+              step="1"
+              placeholder="1"
+            />
+          </FormField>
+          <div class="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+            Hisoblanadigan summa: <strong>{{ formatCurrencyDetailed(manualComputedTotal) }}</strong>
           </div>
           <FormField label="Boshlanish oyi (ixtiyoriy, YYYY-MM)">
             <FormControl v-model="manualPaymentModal.form.startMonth" placeholder="2025-01" />
@@ -1167,8 +1182,7 @@ function isStoreOccupied(s) {
             <FormControl v-model="manualPaymentModal.form.notes" placeholder="Izoh kiriting" />
           </FormField>
           <p class="text-xs text-slate-500 dark:text-slate-400">
-            Summa shartnoma oylik to'lovining aniq ko'paytmasi bo'lishi kerak. Agar ikkilansangiz,
-            "Oylar soni" ni kiriting va summani bo'sh qoldiring.
+            Oylik to'lov x ${manualPaymentModal.form.months || 1} oy = {{ formatCurrencyDetailed(manualComputedTotal) }}.
           </p>
         </div>
       </CardBoxModal>
