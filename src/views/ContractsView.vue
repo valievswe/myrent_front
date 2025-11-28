@@ -12,11 +12,24 @@ import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
-import { listContracts, createContract, updateContract, deleteContract, refreshContract, getContractHistory } from '@/services/contracts'
+import {
+  listContracts,
+  createContract,
+  updateContract,
+  deleteContract,
+  refreshContract,
+  getContractHistory,
+} from '@/services/contracts'
 import { listOwners } from '@/services/owners'
 import { listStores } from '@/services/stores'
 import { downloadXLSX } from '../utils/export'
-import { formatTashkentDate, formatTashkentDateISO, getTashkentTodayISO, parseTashkentDate, startOfTashkentDay } from '@/utils/time'
+import {
+  formatTashkentDate,
+  formatTashkentDateISO,
+  getTashkentTodayISO,
+  parseTashkentDate,
+  startOfTashkentDay,
+} from '@/utils/time'
 
 const router = useRouter()
 
@@ -88,7 +101,7 @@ const form = ref({
 
 // Computed
 const searchActive = computed(() => (searchTerm.value || '').trim().length >= SEARCH_MIN_LENGTH)
-const displayItems = computed(() => (searchActive.value ? (searchResults.value || []) : items.value))
+const displayItems = computed(() => (searchActive.value ? searchResults.value || [] : items.value))
 const displayTotal = computed(() => (searchActive.value ? displayItems.value.length : total.value))
 const showShortSearchHint = computed(() => {
   const len = (searchTerm.value || '').trim().length
@@ -107,15 +120,6 @@ const paymentConfirmStore = computed(() => {
   return resolveStore(paymentConfirmContract.value)
 })
 
-const filteredStores = computed(() => {
-  const q = (storeSearch.value || '').trim().toLowerCase()
-  const list = (stores.value || []).filter((s) => !isStoreOccupied(s))
-  if (!q) return list
-  return list.filter(
-    (s) => (s.storeNumber || '').toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q),
-  )
-})
-
 // Helpers
 function formatCurrency(value) {
   if (value === null || value === undefined) return '-'
@@ -124,10 +128,7 @@ function formatCurrency(value) {
   return currencyFormatter.format(num)
 }
 
-function formatSnapshotDate(value) {
-  if (!value) return '-'
-  return formatTashkentDate(value) || '-'
-}
+
 
 function resolveStore(contract) {
   if (contract?.store) return contract.store
@@ -143,8 +144,10 @@ function getPaymentUrl(contract) {
 function getPaymentLinks(contract) {
   const store = resolveStore(contract)
   if (!store) return []
-  if (store.payme_payment_url) return [{ type: 'payme', label: 'Payme', url: store.payme_payment_url }]
-  if (store.click_payment_url) return [{ type: 'click', label: 'Click', url: store.click_payment_url }]
+  if (store.payme_payment_url)
+    return [{ type: 'payme', label: 'Payme', url: store.payme_payment_url }]
+  if (store.click_payment_url)
+    return [{ type: 'click', label: 'Click', url: store.click_payment_url }]
   return []
 }
 
@@ -337,11 +340,11 @@ async function preloadRefs() {
   try {
     const o = await listOwners({ page: 1, limit: 100 })
     owners.value = o.data
-  } catch {}
+  } catch (e) { void e }
   try {
     const s = await listStores({ page: 1, limit: 100, withContracts: true, onlyFree: false })
     stores.value = s.data
-  } catch {}
+  } catch (e) { void e }
 }
 
 // CRUD
@@ -415,7 +418,9 @@ async function submitForm() {
     else await createContract(payload)
     showForm.value = false
     await fetchData()
-    try { await fetchStoreOptions(storeSearch.value?.trim() || '') } catch {}
+    try {
+      await fetchStoreOptions(storeSearch.value?.trim() || '')
+    } catch (e) { void e }
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || e.message || 'Saqlashda xatolik'
   } finally {
@@ -424,7 +429,7 @@ async function submitForm() {
 }
 
 async function removeItem(id) {
-  if (!confirm("Shartnomani arxivga yuborilsinmi?")) return
+  if (!confirm('Shartnomani arxivga yuborilsinmi?')) return
   loading.value = true
   errorMsg.value = ''
   try {
@@ -467,7 +472,7 @@ async function refreshSingleContract(contract) {
     if (fresh) replaceContractInstance(fresh)
   } catch (e) {
     console.error(e)
-    alert("Shartnoma holatini yangilashda xatolik")
+    alert('Shartnoma holatini yangilashda xatolik')
   } finally {
     refreshingContractId.value = null
   }
@@ -482,7 +487,9 @@ async function openContractHistory(contract) {
   contractHistoryModal.value.summary = null
   contractHistoryError.value = ''
   try {
-    const history = await getContractHistory(contract.id, { limit: contractHistoryModal.value.limit })
+    const history = await getContractHistory(contract.id, {
+      limit: contractHistoryModal.value.limit,
+    })
     contractHistoryModal.value.items = history.transactions || []
     contractHistoryModal.value.total = history.total || history.transactions?.length || 0
     contractHistoryModal.value.owner = history.owner || null
@@ -517,7 +524,6 @@ const contractHistorySummary = computed(() => {
   )
 })
 
-
 async function exportContractsXLSX() {
   loading.value = true
   try {
@@ -542,8 +548,15 @@ async function exportContractsXLSX() {
       for (const c of arr) {
         const tx = c.transactions || []
         const paid = tx.filter((t) => t.status === 'PAID')
-        const last = paid.sort((a, b) => (parseTashkentDate(b.createdAt)?.getTime() || 0) - (parseTashkentDate(a.createdAt)?.getTime() || 0))[0]
-        const totalPaid = paid.reduce((sum, t) => sum + Number((t.amount && t.amount.toString()) || 0), 0)
+        const last = paid.sort(
+          (a, b) =>
+            (parseTashkentDate(b.createdAt)?.getTime() || 0) -
+            (parseTashkentDate(a.createdAt)?.getTime() || 0),
+        )[0]
+        const totalPaid = paid.reduce(
+          (sum, t) => sum + Number((t.amount && t.amount.toString()) || 0),
+          0,
+        )
         rows.push([
           c.id,
           c.owner?.fullName || c.ownerId,
@@ -577,7 +590,7 @@ async function exportContractTransactionsXLSX() {
       const res = await listContracts({ page: p, limit: 100, isActive })
       const arr = res.data || []
       for (const c of arr) {
-        for (const t of (c.transactions || [])) {
+        for (const t of c.transactions || []) {
           rows.push([
             c.id,
             c.owner?.fullName || c.ownerId,
@@ -591,7 +604,12 @@ async function exportContractTransactionsXLSX() {
       if (arr.length < 100) break
       p++
     }
-    downloadXLSX(`contract_transactions_${getTashkentTodayISO()}.xlsx`, headers, rows, 'Transactions')
+    downloadXLSX(
+      `contract_transactions_${getTashkentTodayISO()}.xlsx`,
+      headers,
+      rows,
+      'Transactions',
+    )
   } finally {
     loading.value = false
   }
@@ -599,7 +617,7 @@ async function exportContractTransactionsXLSX() {
 function downloadContractHistory() {
   const items = contractHistoryModal.value.items || []
   if (!items.length) return
-  const headers = ["Sana", "Summasi", "Holat", "To'lov ID", "Ega", "Do'kon"]
+  const headers = ['Sana', 'Summasi', 'Holat', "To'lov ID", 'Ega', "Do'kon"]
   const rows = items.map((tx) => [
     formatTashkentDate(tx.createdAt) || '',
     tx.amount ?? '',
@@ -608,7 +626,12 @@ function downloadContractHistory() {
     contractHistoryModal.value.owner?.fullName || '',
     contractHistoryModal.value.store?.storeNumber || '',
   ])
-  downloadXLSX(`contract_${contractHistoryModal.value.contractId}_history.xlsx`, headers, rows, 'Tarix')
+  downloadXLSX(
+    `contract_${contractHistoryModal.value.contractId}_history.xlsx`,
+    headers,
+    rows,
+    'Tarix',
+  )
 }
 async function openQrCode(contract, provider) {
   const options = getPaymentLinks(contract)
@@ -616,7 +639,9 @@ async function openQrCode(contract, provider) {
     alert("To'lov havolasi topilmadi")
     return
   }
-  const selected = provider ? options.find((opt) => opt.type === provider) || options[0] : options[0]
+  const selected = provider
+    ? options.find((opt) => opt.type === provider) || options[0]
+    : options[0]
   qrModal.value.open = true
   qrModal.value.loading = true
   qrModal.value.contractId = contract.id
@@ -656,8 +681,12 @@ async function selectQrProvider(type) {
 onMounted(async () => {
   await preloadRefs()
   await fetchData()
-  try { await fetchOwnerOptions(ownerSearch.value?.trim() || '') } catch {}
-  try { await fetchStoreOptions(storeSearch.value?.trim() || '') } catch {}
+  try {
+    await fetchOwnerOptions(ownerSearch.value?.trim() || '')
+  } catch (e) { void e }
+  try {
+    await fetchStoreOptions(storeSearch.value?.trim() || '')
+  } catch (e) { void e }
 })
 
 watch(paidFilter, async () => {
@@ -672,10 +701,12 @@ watch(statusFilter, async () => {
   else await fetchData()
 })
 
-let ownerDebounceId
-let storeDebounceId
+// store search debounce id (declared once below with watcher)
 async function fetchOwnerOptions(q) {
-  try { const res = await listOwners({ search: q, page: 1, limit: 20 }); ownerOptions.value = res.data } catch {}
+  try {
+    const res = await listOwners({ search: q, page: 1, limit: 20 })
+    ownerOptions.value = res.data
+  } catch (e) { void e }
 }
 async function fetchStoreOptions(q) {
   try {
@@ -683,18 +714,25 @@ async function fetchStoreOptions(q) {
     storeOptions.value = res.data || []
     const qq = (q || '').toLowerCase()
     const occupiedMatches = (stores.value || []).filter(
-      (s) => isStoreOccupied(s) && ((s.storeNumber || '').toLowerCase().includes(qq) || (s.description || '').toLowerCase().includes(qq)),
+      (s) =>
+        isStoreOccupied(s) &&
+        ((s.storeNumber || '').toLowerCase().includes(qq) ||
+          (s.description || '').toLowerCase().includes(qq)),
     )
     if (qq && occupiedMatches.length) {
-      const nums = occupiedMatches.slice(0, 3).map((s) => s.storeNumber || s.id).join(', ')
+      const nums = occupiedMatches
+        .slice(0, 3)
+        .map((s) => s.storeNumber || s.id)
+        .join(', ')
       const more = occupiedMatches.length > 3 ? ` va yana ${occupiedMatches.length - 3} ta` : ''
       storeInfoMsg.value = `Qidiruvga mos do'kon(lar) band: ${nums}${more}`
     } else {
       storeInfoMsg.value = ''
     }
-  } catch {}
+  } catch (e) { void e }
 }
-
+ 
+let ownerDebounceId
 watch(ownerSearch, (q) => {
   if (ownerDebounceId) clearTimeout(ownerDebounceId)
   ownerDebounceId = setTimeout(() => fetchOwnerOptions(q?.trim() || ''), 250)
@@ -705,8 +743,6 @@ watch(storeSearch, (q) => {
   if (storeDebounceId) clearTimeout(storeDebounceId)
   storeDebounceId = setTimeout(() => fetchStoreOptions(q?.trim() || ''), 250)
 })
-
-
 
 function handlePageChange(newPage) {
   if (loading.value || page.value === newPage) return
@@ -737,7 +773,8 @@ function isStoreOccupied(s) {
   return s.contracts.some((c) => {
     const active = c.isActive !== false
     const startOk = !c.issueDate || (parseTashkentDate(c.issueDate) || new Date(0)) <= today
-    const endOk = !c.expiryDate || (parseTashkentDate(c.expiryDate) || new Date(8640000000000000)) >= today
+    const endOk =
+      !c.expiryDate || (parseTashkentDate(c.expiryDate) || new Date(8640000000000000)) >= today
     return active && startOk && endOk
   })
 }
@@ -986,7 +1023,7 @@ function isStoreOccupied(s) {
         @cancel="resetPaymentConfirmModal"
       >
         <p class="text-sm text-gray-700 dark:text-gray-200">
-          Shartnoma #{{ paymentConfirmContract?.id || 'вЂ”' }} bo'yicha onlayn to'lov sahifasiga
+          Shartnoma #{{ paymentConfirmContract?.id || 'РІР‚вЂќ' }} bo'yicha onlayn to'lov sahifasiga
           o'tishni tasdiqlaysizmi?
         </p>
         <div
@@ -1000,7 +1037,7 @@ function isStoreOccupied(s) {
             }}
           </div>
           <div class="text-xs text-slate-500 dark:text-slate-300">
-                {{ contractHistoryModal.store?.description || "Izoh yo'q" }}
+            {{ contractHistoryModal.store?.description || "Izoh yo'q" }}
           </div>
           <div class="mt-2 text-xs">
             Oylik to'lov:
@@ -1018,7 +1055,7 @@ function isStoreOccupied(s) {
         button-label="Yopish"
         :confirm-disabled="contractHistoryModal.loading"
         :has-cancel="false"
-        :title="`Shartnoma #${contractHistoryModal.contractId || ''} — so'nggi to'lovlar`"
+        :title="`Shartnoma #${contractHistoryModal.contractId || ''} вЂ” so'nggi to'lovlar`"
       >
         <template v-if="contractHistoryError">
           <div class="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -1035,7 +1072,7 @@ function isStoreOccupied(s) {
                 {{ contractHistoryModal.owner?.fullName || "Ega noma'lum" }}
               </div>
               <div class="text-xs text-slate-500 dark:text-slate-300">
-                Do'kon: {{ contractHistoryModal.store?.storeNumber || '-' }} •
+                Do'kon: {{ contractHistoryModal.store?.storeNumber || '-' }} вЂў
                 {{ contractHistoryModal.store?.description || "Izoh yo'q" }}
               </div>
             </div>
@@ -1043,7 +1080,7 @@ function isStoreOccupied(s) {
               <div
                 class="rounded-lg bg-green-50 px-3 py-2 text-green-700 dark:bg-green-900/20 dark:text-green-300"
               >
-                To'langan: {{ contractHistorySummary.paid || 0 }} ta —
+                To'langan: {{ contractHistorySummary.paid || 0 }} ta вЂ”
                 {{ (contractHistorySummary.amountPaid || 0).toLocaleString('ru-RU') }} so'm
               </div>
               <div
