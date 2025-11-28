@@ -1,8 +1,13 @@
 import axios from 'axios'
 
+const fallbackBase =
+  typeof window !== 'undefined' && window.location?.origin
+    ? `${window.location.origin}/api`
+    : '/api';
+
 export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
-  withCredentials: true, 
+  baseURL: import.meta.env.VITE_API_URL || fallbackBase,
+  withCredentials: true,
 })
 
 // Persist token in-memory and localStorage for reloads
