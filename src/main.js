@@ -3,14 +3,23 @@ import { createPinia } from 'pinia'
 
 import App from './App.vue'
 import router from './router'
+import { useDarkModeStore } from './stores/darkMode'
 
 import './css/main.css'
 
-// Init Pinia
 const pinia = createPinia()
+const darkModeStore = useDarkModeStore(pinia)
 
-// Create Vue app
-createApp(App).use(router).use(pinia).mount('#app')
+// Apply preferred theme before mount to avoid flicker
+try {
+  darkModeStore.hydrateFromPreference()
+  darkModeStore.listenToSystemPreference()
+} catch {}
+
+const app = createApp(App)
+app.use(router)
+app.use(pinia)
+app.mount('#app')
 
 // Simple auth guard: require token for protected routes
 router.beforeEach((to) => {
@@ -20,32 +29,10 @@ router.beforeEach((to) => {
   if (to.path === '/login' && token) return { path: '/dashboard' }
 })
 
-// Dark mode: restore persisted setting or prefers-color-scheme
-import { useDarkModeStore } from './stores/darkMode'
-const darkModeStore = useDarkModeStore(pinia)
-try {
-  const persisted = typeof localStorage !== 'undefined' ? localStorage.getItem('darkMode') : null
-  if (
-    (!persisted && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ||
-    persisted === '1'
-  ) {
-    darkModeStore.set(true)
-  } else {
-    darkModeStore.set(false)
-  }
-} catch (_) {}
-
 // Default title tag
 const defaultDocumentTitle = 'Bozor boshqaruv paneli'
 
 // Set document title from route meta
-router.afterEach((to) => {
-  document.title = to.meta?.title
-    ? `${to.meta.title} — ${defaultDocumentTitle}`
-    : defaultDocumentTitle
-})
-
-// Fix document title joiner
 router.afterEach((to) => {
   document.title = to.meta?.title
     ? `${to.meta.title} - ${defaultDocumentTitle}`

@@ -9,7 +9,9 @@ import LineChart from '@/components/Charts/LineChart.vue'
 import { getDailyStatistics, getMonthlyStatistics, getCurrentMonthIncome } from '@/services/statistics'
 import { listAttendances } from '@/services/attendances'
 import { listContracts } from '@/services/contracts'
+import { listSections } from '@/services/sections'
 import { summarizeContractDebts, summarizeAttendanceDebts } from '@/utils/debt'
+import { startOfTashkentDay } from '@/utils/time'
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -29,6 +31,8 @@ const monthRevenueStores = ref({ revenue: 0 })
 const monthDays = ref([])
 const stallsDaily = ref([]) // numbers per day
 const storesDaily = ref([]) // numbers per day
+const sectionDailySummary = ref([])
+const sections = ref([])
 
 const contractDebtSummary = ref({
   expected: 0,
@@ -46,6 +50,7 @@ const stallDebtSummary = ref({
 })
 const debtLoading = ref(false)
 const debtError = ref('')
+const sectionSummaryLoading = ref(false)
 const statsFilter = ref('all')
 const statsFilterOptions = [
   { key: 'all', label: 'Jami' },
@@ -143,19 +148,124 @@ async function fetchAllContracts({ pageSize = 120, maxPages = 15 } = {}) {
   return results
 }
 
+async function loadSectionsList() {
+  if (sections.value.length) return sections.value
+  try {
+    const res = await listSections()
+    sections.value = Array.isArray(res) ? res : res?.data || []
+  } catch (e) {
+    console.error("Bo'limlar ro'yxatini olishda xatolik", e)
+  }
+  return sections.value
+}
+
 async function loadDetailedData() {
   debtLoading.value = true
+  sectionSummaryLoading.value = true
   debtError.value = ''
   try {
-    const [att, cons] = await Promise.all([fetchAllAttendances(), fetchAllContracts()])
+    const [att, cons, sec] = await Promise.all([
+      fetchAllAttendances(),
+      fetchAllContracts(),
+      loadSectionsList(),
+    ])
     stallDebtSummary.value = summarizeAttendanceDebts(att)
     contractDebtSummary.value = summarizeContractDebts(cons, { asOf: new Date() })
     computeDailySeries(att, cons)
+    computeSectionDaily(att, cons, sec)
   } catch (e) {
     debtError.value = e?.response?.data?.message || e.message || 'Qarzdorlikni hisoblashda xatolik'
   } finally {
     debtLoading.value = false
+    sectionSummaryLoading.value = false
   }
+}
+
+function computeSectionDaily(attendances = [], contracts = [], sectionList = []) {
+  const start = startOfTashkentDay(new Date())
+  const end = start ? new Date(start) : null
+  if (end) end.setDate(end.getDate() + 1)
+
+  const sectionNameMap = new Map()
+  for (const sec of sectionList || []) {
+    const id = Number(sec?.id)
+    if (Number.isFinite(id)) sectionNameMap.set(id, sec.name || `Bo'lim #${id}`)
+  }
+
+  const buckets = new Map()
+  const labelFor = (id, fallback) => {
+    if (id === 'unknown') return fallback || 'Aniqlanmagan'
+    const numeric = Number(id)
+    if (Number.isFinite(numeric) && sectionNameMap.has(numeric)) return sectionNameMap.get(numeric)
+    return fallback || `Bo'lim #${id ?? '-'}`
+  }
+
+  const ensureBucket = (sectionId, fallbackName) => {
+    const key = sectionId ?? 'unknown'
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        id: key,
+        name: labelFor(sectionId, fallbackName),
+        stallRevenue: 0,
+        storeRevenue: 0,
+        stallCount: 0,
+        storeCount: 0,
+      })
+    }
+    return buckets.get(key)
+  }
+
+  const isToday = (value) => {
+    if (!start || !end || !value) return false
+    const date = new Date(value)
+    return Number.isFinite(date.getTime()) && date >= start && date < end
+  }
+
+  const toNumber = (value) => {
+    const num = Number(value)
+    return Number.isFinite(num) ? num : 0
+  }
+
+  for (const attendance of attendances || []) {
+    if (!attendance) continue
+    if (!isToday(attendance.date)) continue
+    const isPaid =
+      attendance.status === 'PAID' ||
+      attendance.transaction?.status === 'PAID' ||
+      attendance.Transaction?.status === 'PAID'
+    if (!isPaid) continue
+    const sectionId =
+      attendance.Stall?.sectionId ??
+      attendance.sectionId ??
+      attendance.stall?.sectionId ??
+      'unknown'
+    const sectionName = attendance.Stall?.Section?.name || attendance.sectionName
+    const bucket = ensureBucket(sectionId, sectionName)
+    bucket.stallRevenue += toNumber(attendance.amount)
+    bucket.stallCount += 1
+  }
+
+  for (const contract of contracts || []) {
+    if (!contract?.transactions?.length) continue
+    const sectionId =
+      contract.Store?.sectionId ?? contract.store?.sectionId ?? contract.sectionId ?? 'unknown'
+    const sectionName = contract.Store?.Section?.name || contract.Store?.sectionName
+    for (const tx of contract.transactions) {
+      if (tx.status !== 'PAID' || !isToday(tx.createdAt)) continue
+      const bucket = ensureBucket(sectionId, sectionName)
+      bucket.storeRevenue += toNumber(tx.amount)
+      bucket.storeCount += 1
+    }
+  }
+
+  sectionDailySummary.value = Array.from(buckets.values())
+    .map((bucket) => ({
+      ...bucket,
+      name: labelFor(bucket.id, bucket.name),
+      totalRevenue: bucket.stallRevenue + bucket.storeRevenue,
+      totalCount: bucket.stallCount + bucket.storeCount,
+    }))
+    .sort((a, b) => b.totalRevenue - a.totalRevenue || String(a.name).localeCompare(b.name))
 }
 
 function formatAmount(value) {
@@ -289,6 +399,91 @@ const filteredMonthlyCards = computed(() => {
   return monthlyCards.value.filter((card) => card.key === statsFilter.value)
 })
 
+const sectionDailyTotals = computed(() =>
+  sectionDailySummary.value.reduce(
+    (acc, sec) => ({
+      stallRevenue: acc.stallRevenue + (sec.stallRevenue || 0),
+      storeRevenue: acc.storeRevenue + (sec.storeRevenue || 0),
+      totalRevenue: acc.totalRevenue + (sec.totalRevenue || 0),
+      totalCount: acc.totalCount + (sec.totalCount || 0),
+    }),
+    { stallRevenue: 0, storeRevenue: 0, totalRevenue: 0, totalCount: 0 },
+  ),
+)
+
+function coveragePercent(paid, expected) {
+  const pay = Number(paid || 0)
+  const need = Number(expected || 0)
+  if (!Number.isFinite(pay) || !Number.isFinite(need) || need <= 0) return 0
+  return Math.min(100, Math.round((pay / need) * 100))
+}
+
+const coverageCards = computed(() => {
+  const stallCover = coveragePercent(stallDebtSummary.value.paid, stallDebtSummary.value.expected)
+  const storeCover = coveragePercent(contractDebtSummary.value.paid, contractDebtSummary.value.expected)
+  const combinedPaid = (stallDebtSummary.value.paid || 0) + (contractDebtSummary.value.paid || 0)
+  const combinedExpected =
+    (stallDebtSummary.value.expected || 0) + (contractDebtSummary.value.expected || 0)
+  const combinedCover = coveragePercent(combinedPaid, combinedExpected)
+  return [
+    {
+      key: 'stall',
+      title: 'Rasta qoplama',
+      subtitle: "Kunlik yig'imlar",
+      percent: stallCover,
+      amount: formatAmount(stallDebtSummary.value.paid),
+      accent: 'from-amber-50 to-orange-100',
+    },
+    {
+      key: 'store',
+      title: "Do'kon qoplama",
+      subtitle: "Oylik ijara",
+      percent: storeCover,
+      amount: formatAmount(contractDebtSummary.value.paid),
+      accent: 'from-sky-50 to-blue-100',
+    },
+    {
+      key: 'all',
+      title: 'Umumiy qoplama',
+      subtitle: 'Rasta + do‘kon',
+      percent: combinedCover,
+      amount: formatAmount(combinedPaid),
+      accent: 'from-emerald-50 to-emerald-100',
+    },
+  ]
+})
+
+const insightCards = computed(() => {
+  const avgTicket =
+    dailyAll.value.count > 0 ? dailyAll.value.revenue / dailyAll.value.count : dailyAll.value.revenue
+  const daysPassed = Math.max(1, new Date().getDate())
+  const monthlyAvg = (monthRevenueAll.value.revenue || 0) / daysPassed
+  const totalDebt = (contractDebtSummary.value.debt || 0) + (stallDebtSummary.value.debt || 0)
+  return [
+    {
+      key: 'avg-ticket',
+      title: "Bugungi o'rtacha chek",
+      value: formatAmount(avgTicket),
+      hint: 'Jami tushum / tranzaksiya',
+    },
+    {
+      key: 'monthly-avg',
+      title: "Oylik kunlik o'rtacha",
+      value: formatAmount(monthlyAvg),
+      hint: 'Hozirgacha tushum / kunlar soni',
+    },
+    {
+      key: 'debt',
+      title: 'Jami qarzdorlik',
+      value: formatAmount(totalDebt),
+      hint: "Rasta va do'konlarni qo'shib",
+      tone: 'danger',
+    },
+  ]
+})
+
+const leadingSection = computed(() => sectionDailySummary.value[0] || null)
+
 async function fetchStats() {
   loading.value = true
   errorMsg.value = ''
@@ -391,6 +586,63 @@ onMounted(async () => {
       </div>
 
       <CardBox class="mb-6">
+        <div class="grid gap-4 md:grid-cols-3">
+          <div
+            v-for="card in insightCards"
+            :key="card.key"
+            class="rounded-xl border border-slate-100 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800"
+          >
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">
+              {{ card.title }}
+            </div>
+            <div
+              class="mt-2 text-3xl font-semibold md:text-4xl"
+              :class="card.tone === 'danger' ? 'text-rose-500 dark:text-rose-300' : 'text-slate-900 dark:text-slate-100'"
+            >
+              {{ card.value }}
+            </div>
+            <div class="text-xs text-slate-500 dark:text-slate-300">{{ card.hint }}</div>
+          </div>
+        </div>
+      </CardBox>
+
+      <CardBox class="mb-6">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 pb-4 pt-5 dark:border-slate-700">
+          <div>
+            <div class="text-sm font-semibold text-slate-800 dark:text-slate-100">Qoplama ko'rsatkichlari</div>
+            <div class="text-xs text-slate-500 dark:text-slate-300">Majburiyat va to'lovlar balansi</div>
+          </div>
+          <div v-if="leadingSection" class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+            Eng faol bo'lim: {{ leadingSection.name }} ({{ formatAmount(leadingSection.totalRevenue) }} so'm)
+          </div>
+        </div>
+        <div class="grid gap-4 p-6 md:grid-cols-3">
+          <div
+            v-for="card in coverageCards"
+            :key="card.key"
+            class="rounded-xl border border-slate-100 bg-gradient-to-r p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800"
+            :class="card.accent"
+          >
+            <div class="flex items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-100">
+              <span>{{ card.title }}</span>
+              <span class="text-xs text-slate-500 dark:text-slate-300">{{ card.subtitle }}</span>
+            </div>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-3xl font-bold text-slate-900 dark:text-slate-100">{{ card.percent }}%</span>
+              <span class="text-xs text-slate-500 dark:text-slate-300">qoplama</span>
+            </div>
+            <div class="mt-3 h-2 w-full rounded-full bg-white/60 dark:bg-slate-700">
+              <div
+                class="h-2 rounded-full bg-slate-900 transition-all dark:bg-slate-200"
+                :style="{ width: `${card.percent}%` }"
+              />
+            </div>
+            <div class="mt-2 text-xs text-slate-600 dark:text-slate-200">To'langan: {{ card.amount }} so'm</div>
+          </div>
+        </div>
+      </CardBox>
+
+      <CardBox class="mb-6">
         <div class="grid gap-6 p-6 md:grid-cols-3">
           <div class="space-y-2">
             <div class="text-xs uppercase tracking-wide text-gray-500">Do'kon shartnomalari</div>
@@ -426,6 +678,77 @@ onMounted(async () => {
               @click="loadDetailedData"
             />
           </div>
+        </div>
+      </CardBox>
+
+      <CardBox class="mb-6">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 pb-3 pt-4 dark:border-slate-700">
+          <div>
+            <div class="text-sm font-semibold text-slate-800 dark:text-slate-100">Bo'limlar kesimida bugungi to'lovlar</div>
+            <div class="text-xs text-slate-500 dark:text-slate-300">Rasta va do'kon tushumlari jamlanmasi</div>
+          </div>
+          <BaseButton small color="info" :disabled="sectionSummaryLoading" :label="sectionSummaryLoading ? 'Yangilanmoqda...' : 'Hisobotni yangilash'" @click="loadDetailedData" />
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full table-auto text-sm">
+            <thead>
+              <tr class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                <th class="px-4 py-2">Bo'lim</th>
+                <th class="px-4 py-2">Rasta tushumi</th>
+                <th class="px-4 py-2">Do'kon tushumi</th>
+                <th class="px-4 py-2">Jami</th>
+                <th class="px-4 py-2 text-right">Tranzaksiyalar</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="sectionSummaryLoading">
+                <td colspan="5" class="px-4 py-4 text-center text-slate-500 dark:text-slate-300">Hisoblanmoqda...</td>
+              </tr>
+              <tr v-else-if="!sectionDailySummary.length">
+                <td colspan="5" class="px-4 py-4 text-center text-slate-500 dark:text-slate-300">Bugungi to'lovlar hali yo'q</td>
+              </tr>
+              <tr
+                v-for="section in sectionDailySummary"
+                v-else
+                :key="section.id"
+                class="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/80"
+              >
+                <td class="px-4 py-2 font-semibold text-slate-800 dark:text-slate-100">
+                  {{ section.name }}
+                  <span class="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-200">
+                    {{ section.totalCount }} trx
+                  </span>
+                </td>
+                <td class="px-4 py-2 text-amber-600 dark:text-amber-300">
+                  {{ formatAmount(section.stallRevenue) }} so'm
+                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Rasta: {{ section.stallCount }}</div>
+                </td>
+                <td class="px-4 py-2 text-sky-600 dark:text-sky-300">
+                  {{ formatAmount(section.storeRevenue) }} so'm
+                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Do'kon: {{ section.storeCount }}</div>
+                </td>
+                <td class="px-4 py-2 font-semibold text-emerald-600 dark:text-emerald-300">
+                  {{ formatAmount(section.totalRevenue) }} so'm
+                </td>
+                <td class="px-4 py-2 text-right text-slate-700 dark:text-slate-200">
+                  {{ section.totalCount }}
+                </td>
+              </tr>
+              <tr v-if="sectionDailySummary.length" class="bg-slate-50 font-semibold text-slate-800 dark:bg-slate-800 dark:text-slate-100">
+                <td class="px-4 py-2">Jami</td>
+                <td class="px-4 py-2 text-amber-700 dark:text-amber-300">
+                  {{ formatAmount(sectionDailyTotals.stallRevenue) }} so'm
+                </td>
+                <td class="px-4 py-2 text-sky-700 dark:text-sky-300">
+                  {{ formatAmount(sectionDailyTotals.storeRevenue) }} so'm
+                </td>
+                <td class="px-4 py-2 text-emerald-700 dark:text-emerald-300">
+                  {{ formatAmount(sectionDailyTotals.totalRevenue) }} so'm
+                </td>
+                <td class="px-4 py-2 text-right">{{ sectionDailyTotals.totalCount }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </CardBox>
 
