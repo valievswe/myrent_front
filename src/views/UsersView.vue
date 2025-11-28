@@ -1,10 +1,12 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { mdiPencilOutline, mdiDeleteOutline } from '@mdi/js'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
 import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
+import ActionMenu from '@/components/ActionMenu.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
@@ -165,8 +167,12 @@ watch([page, limit], () => {
                 <td class="px-4 py-2">{{ it.lastName }}</td>
                 <td class="px-4 py-2">{{ it.role }}</td>
                 <td class="px-4 py-2 text-right">
-                  <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
-                  <BaseButton color="danger" small outline label="O'chirish" class="ml-2" @click="removeItem(it.id)" />
+                  <ActionMenu
+                    :items="[
+                      { label: 'Tahrirlash', icon: mdiPencilOutline, onClick: () => openEdit(it) },
+                      { label: `O'chirish`, icon: mdiDeleteOutline, danger: true, onClick: () => removeItem(it.id) },
+                    ]"
+                  />
                 </td>
               </tr>
             </tbody>

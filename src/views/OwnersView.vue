@@ -1,10 +1,12 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { mdiPencilOutline, mdiDeleteOutline, mdiEyeOutline } from '@mdi/js'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
 import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
+import ActionMenu from '@/components/ActionMenu.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
@@ -184,17 +186,14 @@ watch([page, limit], () => {
                   <span v-else>-</span>
                 </td>
                 <td class="px-4 py-2">{{ it.address }}</td>
-                <td class="px-4 py-2">
-                  <div class="flex flex-wrap justify-end gap-2">
-                    <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
-                    <BaseButton
-                      color="danger"
-                      small
-                      outline
-                      label="O'chirish"
-                      @click="removeItem(it.id)"
-                    />
-                  </div>
+                <td class="px-4 py-2 text-right">
+                  <ActionMenu
+                    :items="[
+                      { label: 'Ko‘rish', icon: mdiEyeOutline, onClick: () => openEdit(it) },
+                      { label: 'Tahrirlash', icon: mdiPencilOutline, onClick: () => openEdit(it) },
+                      { label: `O'chirish`, icon: mdiDeleteOutline, danger: true, onClick: () => removeItem(it.id) },
+                    ]"
+                  />
                 </td>
               </tr>
             </tbody>

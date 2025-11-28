@@ -1,11 +1,13 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { mdiPencilOutline, mdiDeleteOutline, mdiEyeOutline } from '@mdi/js'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
 import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
+import ActionMenu from '@/components/ActionMenu.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
@@ -365,39 +367,22 @@ onUnmounted(() => cleanupDebounce())
                   <td class="px-4 py-2">{{ getSectionName(it.sectionId) }}</td>
                   <td class="px-4 py-2">{{ getSaleType(it.saleTypeId)?.name || it.saleTypeId }}</td>
                   <td class="px-4 py-2">{{ it.area }}</td>
-                  <td class="px-4 py-2">{{ getSaleType(it.saleTypeId)?.tax }}</td>
-                  <td class="px-4 py-2">
-                    {{ (Number(it.area) || 0) * (Number(getSaleType(it.saleTypeId)?.tax) || 0) }}
-                  </td>
-                  <td class="px-4 py-2">{{ it.description }}</td>
-                  <td class="px-4 py-2 text-right">
-                    <BaseButton color="info" small label="Tahrirlash" @click="openEdit(it)" />
-                    <BaseButton
-                      color="danger"
-                      small
-                      outline
-                      label="O'chirish"
-                      class="ml-2"
-                      @click="removeItem(it.id)"
-                    />
-                    <BaseButton
-                      color="info"
-                      small
-                      outline
-                      label="Batafsil"
-                      class="ml-2"
-                      @click="goToStallDetail(it)"
-                    />
-                    <BaseButton
-                      color="info"
-                      small
-                      outline
-                      label="Attendance"
-                      class="ml-2"
-                      @click="toggleAttendance(it)"
-                    />
-                  </td>
-                </tr>
+                <td class="px-4 py-2">{{ getSaleType(it.saleTypeId)?.tax }}</td>
+                <td class="px-4 py-2">
+                  {{ (Number(it.area) || 0) * (Number(getSaleType(it.saleTypeId)?.tax) || 0) }}
+                </td>
+                <td class="px-4 py-2">{{ it.description }}</td>
+                <td class="px-4 py-2 text-right">
+                  <ActionMenu
+                    :items="[
+                      { label: 'Ko‘rish', icon: mdiEyeOutline, onClick: () => goToStallDetail(it) },
+                      { label: 'Tahrirlash', icon: mdiPencilOutline, onClick: () => openEdit(it) },
+                      { label: 'Attendance', icon: mdiEyeOutline, onClick: () => toggleAttendance(it) },
+                      { label: `O'chirish`, icon: mdiDeleteOutline, danger: true, onClick: () => removeItem(it.id) },
+                    ]"
+                  />
+                </td>
+              </tr>
                 <tr v-if="expandedStallId === it.id">
                   <td colspan="8" class="bg-gray-50 px-4 py-3 dark:bg-gray-800">
                     <div class="mb-2 text-sm font-semibold">So'nggi attendance</div>

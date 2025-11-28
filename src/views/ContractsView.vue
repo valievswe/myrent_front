@@ -1,13 +1,25 @@
 ﻿<script setup>
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { mdiRefresh, mdiQrcode, mdiHistory, mdiFileExcelBox } from '@mdi/js'
+import {
+  mdiRefresh,
+  mdiQrcode,
+  mdiHistory,
+  mdiFileExcelBox,
+  mdiPencilOutline,
+  mdiCreditCardOutline,
+  mdiBankTransfer,
+  mdiArchiveArrowDownOutline,
+  mdiBackupRestore,
+  mdiOpenInNew,
+} from '@mdi/js'
 import QRCode from 'qrcode'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
 import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
+import ActionMenu from '@/components/ActionMenu.vue'
 import FormField from '@/components/FormField.vue'
 import FormControl from '@/components/FormControl.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
@@ -19,6 +31,7 @@ import {
   deleteContract,
   refreshContract,
   getContractHistory,
+  manualContractPayment,
 } from '@/services/contracts'
 import { listOwners } from '@/services/owners'
 import { listStores } from '@/services/stores'
@@ -79,6 +92,21 @@ const paymentConfirmModal = ref({
   contract: null,
   url: '',
   provider: '',
+})
+
+const manualPaymentModal = ref({
+  open: false,
+  contract: null,
+  loading: false,
+  error: '',
+  form: {
+    transferNumber: '',
+    transferDate: getTashkentTodayISO(),
+    amount: null,
+    months: 1,
+    startMonth: '',
+    notes: '',
+  },
 })
 
 const refreshingContractId = ref(null)
@@ -196,6 +224,63 @@ function getLastPaidDate(contract) {
     return acc
   }, null)
   return latest
+}
+
+function contractActions(contract) {
+  const paid = contractPaidThisMonth(contract)
+  const paymentUrlAvailable = Boolean(getPaymentUrl(contract))
+  const items = [
+    { label: 'Batafsil', icon: mdiOpenInNew, onClick: () => goToContractDetail(contract) },
+    {
+      label: "Onlayn to'lov",
+      icon: mdiCreditCardOutline,
+      hint: paid ? "Joriy oy to'langan" : '',
+      disabled: !paymentUrlAvailable || !contract.isActive || paid,
+      onClick: () => handleContractPayment(contract),
+    },
+    {
+      label: "Qo'lda to'lov",
+      icon: mdiBankTransfer,
+      hint: 'Bank kvitansiyasi',
+      onClick: () => openManualPayment(contract),
+    },
+    {
+      label: 'Holatni yangilash',
+      icon: mdiRefresh,
+      disabled: refreshingContractId.value === contract.id || loading.value,
+      onClick: () => refreshSingleContract(contract),
+    },
+    { label: 'To\'lov tarixi', icon: mdiHistory, onClick: () => openContractHistory(contract) },
+    {
+      label: 'QR',
+      icon: mdiQrcode,
+      disabled: !getPaymentLinks(contract).length,
+      onClick: () => openQrCode(contract),
+    },
+  ]
+
+  if (contract.isActive) {
+    items.push({
+      label: 'Arxivlash',
+      icon: mdiArchiveArrowDownOutline,
+      danger: true,
+      onClick: () => removeItem(contract.id),
+    })
+  } else {
+    items.push({
+      label: 'Tiklash',
+      icon: mdiBackupRestore,
+      onClick: () => restoreItem(contract.id),
+    })
+  }
+  if (!paid) {
+    items.push({
+      label: 'Tahrirlash',
+      icon: mdiPencilOutline,
+      onClick: () => openEdit(contract),
+    })
+  }
+  return items
 }
 
 function getNextDueDate(contract) {
@@ -476,6 +561,49 @@ async function refreshSingleContract(contract) {
   } finally {
     refreshingContractId.value = null
   }
+}
+
+function openManualPayment(contract) {
+  if (!contract?.id) return
+  manualPaymentModal.value.open = true
+  manualPaymentModal.value.contract = contract
+  manualPaymentModal.value.error = ''
+  manualPaymentModal.value.form = {
+    transferNumber: '',
+    transferDate: getTashkentTodayISO(),
+    amount: null,
+    months: 1,
+    startMonth: '',
+    notes: '',
+  }
+}
+
+async function submitManualPayment() {
+  const modal = manualPaymentModal.value
+  if (!modal.contract?.id) return
+  modal.loading = true
+  modal.error = ''
+  try {
+    const payload = {
+      transferNumber: modal.form.transferNumber,
+      transferDate: modal.form.transferDate || undefined,
+      amount: modal.form.amount ? Number(modal.form.amount) : undefined,
+      months: modal.form.months ? Number(modal.form.months) : undefined,
+      startMonth: modal.form.startMonth || undefined,
+      notes: modal.form.notes || undefined,
+    }
+    await manualContractPayment(modal.contract.id, payload)
+    modal.open = false
+    await refreshSingleContract(modal.contract)
+  } catch (e) {
+    modal.error = e?.response?.data?.message || e.message || 'Qo\'lda to\'lovda xatolik'
+  } finally {
+    modal.loading = false
+  }
+}
+
+function closeManualPaymentModal() {
+  manualPaymentModal.value.open = false
 }
 
 async function openContractHistory(contract) {
@@ -924,72 +1052,8 @@ function isStoreOccupied(s) {
                       Muddat tugagan
                     </div>
                   </td>
-                  <td class="px-4 py-2 align-top">
-                    <div class="flex flex-wrap justify-end gap-2">
-                      <BaseButton
-                        color="info"
-                        small
-                        label="Batafsil"
-                        @click="goToContractDetail(it)"
-                      />
-                      <BaseButton
-                        color="success"
-                        small
-                        outline
-                        label="To'lov"
-                        :disabled="!getPaymentUrl(it) || !it.isActive || contractPaidThisMonth(it)"
-                        @click="handleContractPayment(it)"
-                      />
-                      <BaseButton
-                        color="info"
-                        small
-                        label="Tahrirlash"
-                        :disabled="contractPaidThisMonth(it)"
-                        @click="openEdit(it)"
-                      />
-                      <BaseButton
-                        small
-                        outline
-                        :icon="mdiRefresh"
-                        title="Holatni yangilash"
-                        :disabled="refreshingContractId === it.id || loading"
-                        @click="refreshSingleContract(it)"
-                      />
-                      <BaseButton
-                        color="info"
-                        small
-                        outline
-                        label="Tarix"
-                        :icon="mdiHistory"
-                        @click="openContractHistory(it)"
-                      />
-                      <BaseButton
-                        small
-                        outline
-                        :icon="mdiQrcode"
-                        label="QR"
-                        :disabled="!getPaymentLinks(it).length"
-                        @click="openQrCode(it)"
-                      />
-                      <template v-if="it.isActive">
-                        <BaseButton
-                          color="warning"
-                          small
-                          outline
-                          label="Arxivlash"
-                          @click="removeItem(it.id)"
-                        />
-                      </template>
-                      <template v-else>
-                        <BaseButton
-                          color="success"
-                          small
-                          outline
-                          label="Tiklash"
-                          @click="restoreItem(it.id)"
-                        />
-                      </template>
-                    </div>
+                  <td class="px-4 py-2 align-top text-right">
+                    <ActionMenu :items="contractActions(it)" />
                   </td>
                 </tr>
               </template>
@@ -1048,6 +1112,65 @@ function isStoreOccupied(s) {
           Davom etish tugmasi {{ paymentConfirmModal.provider || "onlayn to'lov" }} sahifasini yangi
           oynada ochadi.
         </p>
+      </CardBoxModal>
+      <CardBoxModal
+        v-model="manualPaymentModal.open"
+        has-cancel
+        :close-on-confirm="false"
+        :confirm-disabled="manualPaymentModal.loading"
+        :button-label="manualPaymentModal.loading ? 'Saqlanmoqda...' : 'Saqlash'"
+        title="Qo'lda to'lov"
+        @confirm="submitManualPayment"
+        @cancel="closeManualPaymentModal"
+      >
+        <div class="space-y-3">
+          <div
+            v-if="manualPaymentModal.error"
+            class="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200"
+          >
+            {{ manualPaymentModal.error }}
+          </div>
+          <FormField label="Kvitansiya raqami">
+            <FormControl
+              v-model="manualPaymentModal.form.transferNumber"
+              placeholder="Misol: TR-2024-0001"
+              required
+            />
+          </FormField>
+          <FormField label="To'lov sanasi">
+            <FormControl v-model="manualPaymentModal.form.transferDate" type="date" />
+          </FormField>
+          <div class="grid gap-3 md:grid-cols-2">
+            <FormField label="Summa (UZS)">
+              <FormControl
+                v-model.number="manualPaymentModal.form.amount"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="500000"
+              />
+            </FormField>
+            <FormField label="Oylar soni">
+              <FormControl
+                v-model.number="manualPaymentModal.form.months"
+                type="number"
+                min="1"
+                step="1"
+                placeholder="1"
+              />
+            </FormField>
+          </div>
+          <FormField label="Boshlanish oyi (ixtiyoriy, YYYY-MM)">
+            <FormControl v-model="manualPaymentModal.form.startMonth" placeholder="2025-01" />
+          </FormField>
+          <FormField label="Izoh (ixtiyoriy)">
+            <FormControl v-model="manualPaymentModal.form.notes" placeholder="Izoh kiriting" />
+          </FormField>
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            Summa shartnoma oylik to'lovining aniq ko'paytmasi bo'lishi kerak. Agar ikkilansangiz,
+            "Oylar soni" ni kiriting va summani bo'sh qoldiring.
+          </p>
+        </div>
       </CardBoxModal>
       <CardBoxModal
         v-model="contractHistoryModal.open"
