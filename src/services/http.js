@@ -1,10 +1,7 @@
 import axios from 'axios'
 
-// Base URL points to Nest global prefix
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
-
 export const http = axios.create({
-  baseURL: "/api",
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
   withCredentials: true, 
 })
 
@@ -69,7 +66,7 @@ http.interceptors.response.use(
         pendingQueue = []
         // clear token and force login
         setAccessToken(null)
-        try { window.location.hash = '#/login' } catch (_) { }
+        try { window.location.href = '/login' } catch (_) { }
       } finally {
         isRefreshing = false
       }
