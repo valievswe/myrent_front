@@ -39,6 +39,8 @@ const seriesLabels = ref([])
 const stallsSeries = ref([])
 const storesSeries = ref([])
 const filteredTotals = ref({ count: 0, revenue: 0 })
+const filteredCashTotals = ref({ count: 0, revenue: 0 })
+const filteredBankTotals = ref({ count: 0, revenue: 0 })
 const filtersLoading = ref(false)
 const filtersError = ref('')
 
@@ -163,11 +165,19 @@ async function fetchFilteredStats() {
       status: filterStatus.value || 'PAID',
       groupBy: filterGroupBy.value || 'daily',
     }
-    const [tot, ser] = await Promise.all([
+    const [tot, cashTot, paymeTot, clickTot, ser] = await Promise.all([
       getStatisticsTotals(params),
+      getStatisticsTotals({ ...params, method: 'CASH' }),
+      getStatisticsTotals({ ...params, method: 'PAYME' }),
+      getStatisticsTotals({ ...params, method: 'CLICK' }),
       getStatisticsSeries(params),
     ])
     filteredTotals.value = tot || { count: 0, revenue: 0 }
+    filteredCashTotals.value = cashTot || { count: 0, revenue: 0 }
+    filteredBankTotals.value = {
+      count: (paymeTot?.count || 0) + (clickTot?.count || 0),
+      revenue: (paymeTot?.revenue || 0) + (clickTot?.revenue || 0),
+    }
     const labels = Array.isArray(ser?.labels) ? ser.labels : []
     seriesLabels.value = labels
     const stall = (ser?.series || []).find((s) => s.key === 'stall')
@@ -657,6 +667,23 @@ watch([filterFrom, filterTo, filterType, filterMethod, filterStatus, filterGroup
 
       <div v-if="filtersError" class="mb-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-700">{{ filtersError }}</div>
       <div class="mb-2 text-xs text-slate-500">Filtrlangan jami: {{ formatAmount(filteredTotals.revenue) }} so'm, tranzaksiya: {{ formatCount(filteredTotals.count) }}</div>
+      <div class="mb-4 grid gap-3 md:grid-cols-3">
+        <div class="rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <div class="text-slate-500 dark:text-slate-300">Naqd (CASH)</div>
+          <div class="mt-1 text-2xl font-semibold">{{ formatAmount(filteredCashTotals.revenue) }}</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400">Tranzaksiya: {{ formatCount(filteredCashTotals.count) }}</div>
+        </div>
+        <div class="rounded-lg border border-sky-200 bg-white p-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <div class="text-slate-500 dark:text-slate-300">Bank (Payme + Click)</div>
+          <div class="mt-1 text-2xl font-semibold">{{ formatAmount(filteredBankTotals.revenue) }}</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400">Tranzaksiya: {{ formatCount(filteredBankTotals.count) }}</div>
+        </div>
+        <div class="rounded-lg border border-emerald-200 bg-white p-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <div class="text-slate-500 dark:text-slate-300">Jami (Filtr)</div>
+          <div class="mt-1 text-2xl font-semibold">{{ formatAmount(filteredTotals.revenue) }}</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400">Tranzaksiya: {{ formatCount(filteredTotals.count) }}</div>
+        </div>
+      </div>
 
       <div class="mb-6 grid gap-4 md:grid-cols-3">
         <CardBox v-for="card in filteredDailyCards" :key="card.title">
