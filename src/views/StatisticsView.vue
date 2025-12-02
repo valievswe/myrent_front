@@ -1,12 +1,12 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
 import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import LineChart from '@/components/Charts/LineChart.vue'
-import { getDailyStatistics, getMonthlyStatistics, getCurrentMonthIncome } from '@/services/statistics'
+import { getDailyStatistics, getMonthlyStatistics, getCurrentMonthIncome, getStatisticsTotals, getStatisticsSeries } from '@/services/statistics'
 import { listAttendances } from '@/services/attendances'
 import { listContracts } from '@/services/contracts'
 import { listSections } from '@/services/sections'
@@ -33,6 +33,14 @@ const stallsDaily = ref([]) // numbers per day
 const storesDaily = ref([]) // numbers per day
 const sectionDailySummary = ref([])
 const sections = ref([])
+
+// Filtered series and totals
+const seriesLabels = ref([])
+const stallsSeries = ref([])
+const storesSeries = ref([])
+const filteredTotals = ref({ count: 0, revenue: 0 })
+const filtersLoading = ref(false)
+const filtersError = ref('')
 
 const contractDebtSummary = ref({
   expected: 0,
@@ -72,6 +80,27 @@ const monthFormatter = new Intl.DateTimeFormat('uz-UZ', {
 
 const todayLabel = computed(() => dateFormatter.format(new Date()))
 const currentMonthLabel = computed(() => monthFormatter.format(new Date()))
+
+// Filters
+const filterType = ref('all') // all|stall|store
+const filterMethod = ref('') // PAYME|CLICK|CASH|''
+const filterStatus = ref('PAID')
+const filterFrom = ref('')
+const filterTo = ref('')
+const filterGroupBy = ref('daily')
+
+function defaultMonthRange() {
+  const d = new Date()
+  const from = new Date(d.getFullYear(), d.getMonth(), 1)
+  const to = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999)
+  return { from: from.toISOString(), to: to.toISOString() }
+}
+// initialize defaults
+;(function initDefaultRange() {
+  const { from, to } = defaultMonthRange()
+  filterFrom.value = from
+  filterTo.value = to
+})()
 
 function formatCount(value) {
   const numeric = Number(value || 0)
@@ -120,6 +149,39 @@ function computeDailySeries(attendances = [], contracts = []) {
 
   stallsDaily.value = stallsArr
   storesDaily.value = storesArr
+}
+
+async function fetchFilteredStats() {
+  filtersLoading.value = true
+  filtersError.value = ''
+  try {
+    const params = {
+      from: filterFrom.value || undefined,
+      to: filterTo.value || undefined,
+      type: filterType.value || 'all',
+      method: filterMethod.value || undefined,
+      status: filterStatus.value || 'PAID',
+      groupBy: filterGroupBy.value || 'daily',
+    }
+    const [tot, ser] = await Promise.all([
+      getStatisticsTotals(params),
+      getStatisticsSeries(params),
+    ])
+    filteredTotals.value = tot || { count: 0, revenue: 0 }
+    const labels = Array.isArray(ser?.labels) ? ser.labels : []
+    seriesLabels.value = labels
+    const stall = (ser?.series || []).find((s) => s.key === 'stall')
+    const store = (ser?.series || []).find((s) => s.key === 'store')
+    stallsSeries.value = Array.isArray(stall?.data) ? stall.data : new Array(labels.length).fill(0)
+    storesSeries.value = Array.isArray(store?.data) ? store.data : new Array(labels.length).fill(0)
+  } catch (e) {
+    filtersError.value = e?.response?.data?.message || e.message || 'Filtrlangan statistika olinmadi'
+    seriesLabels.value = []
+    stallsSeries.value = []
+    storesSeries.value = []
+  } finally {
+    filtersLoading.value = false
+  }
 }
 
 async function fetchAllAttendances({ pageSize = 200, maxPages = 25 } = {}) {
@@ -275,6 +337,7 @@ function formatAmount(value) {
 
 const chartData = computed(() => {
   const datasets = []
+  const useFiltered = seriesLabels.value.length > 0
   if (statsFilter.value === 'all' || statsFilter.value === 'stall') {
     datasets.push({
       label: 'Rastalar',
@@ -284,7 +347,7 @@ const chartData = computed(() => {
       backgroundColor: 'rgba(251,113,133,0.15)',
       borderWidth: 3,
       pointRadius: 2,
-      data: stallsDaily.value,
+      data: useFiltered ? stallsSeries.value : stallsDaily.value,
       tension: 0.3,
     })
   }
@@ -297,12 +360,12 @@ const chartData = computed(() => {
       backgroundColor: 'rgba(56,189,248,0.15)',
       borderWidth: 3,
       pointRadius: 2,
-      data: storesDaily.value,
+      data: useFiltered ? storesSeries.value : storesDaily.value,
       tension: 0.3,
     })
   }
   return {
-    labels: monthDays.value,
+    labels: useFiltered ? seriesLabels.value : monthDays.value,
     datasets,
   }
 })
@@ -509,6 +572,14 @@ async function fetchStats() {
 onMounted(async () => {
   await fetchStats()
   await loadDetailedData()
+  await fetchFilteredStats()
+})
+
+// Debounce filters
+let filterDebounce
+watch([filterFrom, filterTo, filterType, filterMethod, filterStatus, filterGroupBy], () => {
+  if (filterDebounce) clearTimeout(filterDebounce)
+  filterDebounce = setTimeout(fetchFilteredStats, 350)
 })
 </script>
 
@@ -552,7 +623,40 @@ onMounted(async () => {
             @click="statsFilter = option.key"
           />
         </div>
+        <div class="flex flex-wrap items-center gap-2 text-sm">
+          <label class="text-slate-600 dark:text-slate-300">Turi</label>
+          <select v-model="filterType" class="rounded border px-2 py-1 text-sm dark:bg-slate-900">
+            <option value="all">Jami</option>
+            <option value="stall">Rasta</option>
+            <option value="store">Do'kon</option>
+          </select>
+          <label class="text-slate-600 dark:text-slate-300">Usul</label>
+          <select v-model="filterMethod" class="rounded border px-2 py-1 text-sm dark:bg-slate-900">
+            <option value="">Barchasi</option>
+            <option value="PAYME">Payme</option>
+            <option value="CLICK">Click</option>
+            <option value="CASH">Naqd</option>
+          </select>
+          <label class="text-slate-600 dark:text-slate-300">Holat</label>
+          <select v-model="filterStatus" class="rounded border px-2 py-1 text-sm dark:bg-slate-900">
+            <option value="PAID">PAID</option>
+            <option value="UNPAID">UNPAID</option>
+          </select>
+          <label class="text-slate-600 dark:text-slate-300">Dan</label>
+          <input v-model="filterFrom" type="datetime-local" class="rounded border px-2 py-1 text-sm dark:bg-slate-900" />
+          <label class="text-slate-600 dark:text-slate-300">Gacha</label>
+          <input v-model="filterTo" type="datetime-local" class="rounded border px-2 py-1 text-sm dark:bg-slate-900" />
+          <label class="text-slate-600 dark:text-slate-300">Guruh</label>
+          <select v-model="filterGroupBy" class="rounded border px-2 py-1 text-sm dark:bg-slate-900">
+            <option value="daily">Kunlik</option>
+            <option value="weekly">Haftalik</option>
+            <option value="monthly">Oylik</option>
+          </select>
+        </div>
       </div>
+
+      <div v-if="filtersError" class="mb-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-700">{{ filtersError }}</div>
+      <div class="mb-2 text-xs text-slate-500">Filtrlangan jami: {{ formatAmount(filteredTotals.revenue) }} so'm, tranzaksiya: {{ formatCount(filteredTotals.count) }}</div>
 
       <div class="mb-6 grid gap-4 md:grid-cols-3">
         <CardBox v-for="card in filteredDailyCards" :key="card.title">

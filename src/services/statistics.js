@@ -21,3 +21,15 @@ export async function getCurrentMonthIncome(type) {
   return data // { revenue }
 }
 
+// New filtered endpoints
+export async function getStatisticsTotals(filters = {}) {
+  const params = { ...filters }
+  const { data } = await http.get('/statistics/totals', { params })
+  return data // { count, revenue }
+}
+
+export async function getStatisticsSeries(filters = {}) {
+  const params = { groupBy: 'daily', ...filters }
+  const { data } = await http.get('/statistics/series', { params })
+  return data // { labels, series: [{ key, data }] }
+}
