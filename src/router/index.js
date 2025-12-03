@@ -66,6 +66,7 @@ const routes = [
   },
   { meta: { title: 'Raqamli xarita' }, path: '/map', name: 'map', component: () => import('@/views/MapView.vue') },
   { meta: { title: 'Statistika' }, path: '/statistics', name: 'statistics', component: () => import('@/views/StatisticsView.vue') },
+  { meta: { title: 'Hisob-kitob' }, path: '/reconciliation', name: 'reconciliation', component: () => import('@/views/ReconciliationView.vue') },
   {
     meta: { title: "Attendances" },
     path: '/attendances',
