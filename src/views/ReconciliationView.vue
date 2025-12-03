@@ -179,6 +179,7 @@ function exportLedger() {
       Turi: row.type,
       ID: row.contractId || row.stallId || '',
       "Bo'lim": row.sectionName || '',
+      "Raqam": row.type === 'store' ? (row.storeNumber || '') : (row.stallNumber || ''),
       Holat: statusLabel(row.status),
       Usul: row.method || '',
       Summa: Number(row.amount || 0),
@@ -300,6 +301,7 @@ function exportLedger() {
                 <th class="px-4 py-2">Turi</th>
                 <th class="px-4 py-2">ID</th>
                 <th class="px-4 py-2">Bo'lim</th>
+                <th class="px-4 py-2">Raqam</th>
                 <th class="px-4 py-2">Usul</th>
                 <th class="px-4 py-2">Holat</th>
                 <th class="px-4 py-2 text-right">Summa</th>
@@ -341,6 +343,10 @@ function exportLedger() {
                   <span v-else>-</span>
                 </td>
                 <td class="px-4 py-2 text-slate-700 dark:text-slate-100">{{ row.sectionName || '-' }}</td>
+                <td class="px-4 py-2 text-slate-700 dark:text-slate-100">
+                  <span v-if="row.type === 'store'">{{ row.storeNumber || '-' }}</span>
+                  <span v-else>{{ row.stallNumber || '-' }}</span>
+                </td>
                 <td class="px-4 py-2 text-slate-700 dark:text-slate-100">{{ row.method || '-' }}</td>
                 <td class="px-4 py-2">
                   <span
