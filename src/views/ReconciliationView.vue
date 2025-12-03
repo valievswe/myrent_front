@@ -8,6 +8,7 @@ import BaseButton from '@/components/BaseButton.vue'
 import LineChart from '@/components/Charts/LineChart.vue'
 import { getLedger, getContractSummary, getMonthlyRollup } from '@/services/reconciliation'
 import { formatTashkentDate, formatTashkentDateTime } from '@/utils/time'
+import * as XLSX from 'xlsx'
 
 const loading = ref(false)
 const ledger = ref({ rows: [], from: null, to: null })
@@ -170,42 +171,50 @@ watch([selectedMonth, filterType, filterMethod, filterStatus], loadData)
 
 function exportLedger() {
   const rows = ledger.value.rows || []
-  const headers = [
-    'Sana',
-    'Turi',
-    'ID',
-    'Bo\'lim',
-    'Holat',
-    'Usul',
-    'Summa',
-    'Manba',
-    'To\'lov vaqti',
-  ]
-  const csv = [
-    headers.join(','),
-    ...rows.map((row) =>
-      [
-        formatTashkentDate(row.date),
-        row.type,
-        row.contractId || row.stallId || '',
-        row.sectionName || '',
-        row.status || '',
-        row.method || '',
-        formatAmount(row.amount),
-        row.source,
-        formatTashkentDateTime(row.paidAt),
-      ]
-        .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
-        .join(','),
-    ),
-  ].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'hisob-kitob-ledger.csv'
-  link.click()
-  URL.revokeObjectURL(url)
+  const contractsData = contracts.value || []
+
+  const makeLedgerRows = (list) =>
+    list.map((row) => ({
+      Sana: formatTashkentDate(row.date),
+      Turi: row.type,
+      ID: row.contractId || row.stallId || '',
+      "Bo'lim": row.sectionName || '',
+      Holat: statusLabel(row.status),
+      Usul: row.method || '',
+      Summa: Number(row.amount || 0),
+      Manba: row.source,
+      "To'lov vaqti": formatTashkentDateTime(row.paidAt),
+    }))
+
+  const makeContractRows = (list) =>
+    list.map((c) => ({
+      Shartnoma: c.contractId,
+      "Do'kon": c.storeNumber,
+      "Bo'lim": c.sectionName || '',
+      "Oylik ijara": Number(c.expected || 0),
+      "To'langan": Number(c.paid || 0),
+      "Qoplanmagan": Number(c.unpaid || 0),
+      Holat: c.overpaid ? 'Ortiqcha' : c.unpaid > 0 ? "To'lanmagan" : "To'langan",
+      "Oxirgi to'lov": formatTashkentDateTime(c.lastPaymentAt),
+      Usul: c.lastPaymentMethod || '',
+    }))
+
+  const stallPaid = makeLedgerRows(rows.filter((r) => r.type === 'stall' && r.status === 'PAID'))
+  const stallUnpaid = makeLedgerRows(rows.filter((r) => r.type === 'stall' && r.status !== 'PAID'))
+  const storePaid = makeLedgerRows(rows.filter((r) => r.type === 'store' && r.status === 'PAID'))
+  const storeUnpaid = makeLedgerRows(rows.filter((r) => r.type === 'store' && r.status !== 'PAID'))
+
+  const contractPaid = makeContractRows(contractsData.filter((c) => !c.unpaid || c.unpaid <= 0))
+  const contractUnpaid = makeContractRows(contractsData.filter((c) => c.unpaid > 0))
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stallPaid), "Rasta To'langan")
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stallUnpaid), "Rasta To'lanmagan")
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(storePaid), "Do'kon To'langan")
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(storeUnpaid), "Do'kon To'lanmagan")
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(contractPaid), "Shartnoma To'langan")
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(contractUnpaid), "Shartnoma To'lanmagan")
+  XLSX.writeFile(wb, 'hisob-kitob.xlsx')
 }
 </script>
 
@@ -243,7 +252,7 @@ function exportLedger() {
           </select>
         </div>
         <BaseButton :disabled="loading" color="info" :label="loading ? 'Yuklanmoqda...' : 'Yangilash'" @click="loadData" />
-        <BaseButton :disabled="!ledger.rows?.length" color="success" outline label="Excel (CSV)" @click="exportLedger" />
+        <BaseButton :disabled="!ledger.rows?.length" color="success" outline label="Excel (XLSX)" @click="exportLedger" />
       </div>
 
       <div v-if="errorMsg" class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-400/50 dark:bg-red-950/30">
