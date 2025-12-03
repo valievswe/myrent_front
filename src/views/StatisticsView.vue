@@ -636,7 +636,7 @@ const coverageCards = computed(() => {
       subtitle: "Kunlik yig'imlar",
       percent: stallCover,
       amount: formatAmount(stallDebtSummary.value.paid),
-      accent: 'from-amber-50 to-orange-100',
+      accent: 'from-amber-50 to-orange-100 dark:from-amber-900 dark:to-amber-950',
     },
     {
       key: 'store',
@@ -644,7 +644,7 @@ const coverageCards = computed(() => {
       subtitle: "Oylik ijara",
       percent: storeCover,
       amount: formatAmount(contractDebtSummary.value.paid),
-      accent: 'from-sky-50 to-blue-100',
+      accent: 'from-sky-50 to-blue-100 dark:from-sky-900 dark:to-slate-900',
     },
     {
       key: 'all',
@@ -652,7 +652,7 @@ const coverageCards = computed(() => {
       subtitle: 'Rasta + do‘kon',
       percent: combinedCover,
       amount: formatAmount(combinedPaid),
-      accent: 'from-emerald-50 to-emerald-100',
+      accent: 'from-emerald-50 to-emerald-100 dark:from-emerald-900 dark:to-emerald-950',
     },
   ]
 })
@@ -874,18 +874,32 @@ watch(selectedMonth, (key) => {
           </div>
           <div class="rounded-xl border border-slate-100 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800">
             <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">Rasta vs Do'kon</div>
-            <div class="mt-2 flex items-baseline gap-3">
-              <div>
-                <div class="text-sm text-amber-600 dark:text-amber-300">Rasta</div>
-                <div class="text-xl font-semibold text-slate-900 dark:text-slate-100">{{ formatAmount(monthDetails.stall?.revenue) }}</div>
-                <div class="text-xs text-slate-500 dark:text-slate-400">{{ formatCount(monthDetails.stall?.count) }} trx</div>
-              </div>
-              <div>
-                <div class="text-sm text-sky-600 dark:text-sky-300">Do'kon</div>
-                <div class="text-xl font-semibold text-slate-900 dark:text-slate-100">{{ formatAmount(monthDetails.store?.revenue) }}</div>
-                <div class="text-xs text-slate-500 dark:text-slate-400">{{ formatCount(monthDetails.store?.count) }} trx</div>
-              </div>
-            </div>
+            <table class="mt-3 w-full text-sm">
+              <thead>
+                <tr class="text-left text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">
+                  <th class="pb-1">Turi</th>
+                  <th class="pb-1">Tushum</th>
+                  <th class="pb-1 text-right">Tranzaksiya</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-t border-slate-100 dark:border-slate-700">
+                  <td class="py-2 text-amber-700 dark:text-amber-300">Rasta</td>
+                  <td class="py-2 font-semibold text-slate-900 dark:text-slate-100">{{ formatAmount(monthDetails.stall?.revenue) }}</td>
+                  <td class="py-2 text-right text-slate-600 dark:text-slate-300">{{ formatCount(monthDetails.stall?.count) }}</td>
+                </tr>
+                <tr class="border-t border-slate-100 dark:border-slate-700">
+                  <td class="py-2 text-sky-700 dark:text-sky-300">Do'kon</td>
+                  <td class="py-2 font-semibold text-slate-900 dark:text-slate-100">{{ formatAmount(monthDetails.store?.revenue) }}</td>
+                  <td class="py-2 text-right text-slate-600 dark:text-slate-300">{{ formatCount(monthDetails.store?.count) }}</td>
+                </tr>
+                <tr class="border-t border-slate-200 font-semibold text-slate-900 dark:border-slate-700 dark:text-slate-100">
+                  <td class="py-2">Jami</td>
+                  <td class="py-2">{{ formatAmount((monthDetails.stall?.revenue || 0) + (monthDetails.store?.revenue || 0)) }}</td>
+                  <td class="py-2 text-right">{{ formatCount((monthDetails.stall?.count || 0) + (monthDetails.store?.count || 0)) }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <div class="rounded-xl border border-slate-100 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800">
             <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">To'lov usuli</div>
@@ -941,7 +955,7 @@ watch(selectedMonth, (key) => {
           <div
             v-for="card in coverageCards"
             :key="card.key"
-            class="rounded-xl border border-slate-100 bg-gradient-to-r p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800"
+            class="rounded-xl border border-slate-100 bg-gradient-to-r p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
             :class="card.accent"
           >
             <div class="flex items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-100">
@@ -950,7 +964,7 @@ watch(selectedMonth, (key) => {
             </div>
             <div class="mt-2 flex items-baseline gap-2">
               <span class="text-3xl font-bold text-slate-900 dark:text-slate-100">{{ card.percent }}%</span>
-              <span class="text-xs text-slate-500 dark:text-slate-300">qoplama</span>
+              <span class="text-xs text-slate-500 dark:text-slate-300">To'langan</span>
             </div>
             <div class="mt-3 h-2 w-full rounded-full bg-white/60 dark:bg-slate-700">
               <div
