@@ -86,6 +86,14 @@ const ledgerTotals = computed(() => {
 })
 
 const overpaidContracts = computed(() => contracts.value.filter((c) => c.overpaid))
+const overpaidContractsDetail = computed(() =>
+  overpaidContracts.value.map((c) => ({
+    id: c.contractId,
+    storeNumber: c.storeNumber,
+    sectionName: c.sectionName,
+    overAmount: Number(c.paid || 0) - Number(c.expected || 0),
+  })),
+)
 
 const chartData = computed(() => {
   const labels = rollup.value.labels || []
@@ -452,7 +460,19 @@ function exportLedger() {
       </CardBox>
 
       <div v-if="overpaidContracts.length" class="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/50 dark:bg-amber-900/40 dark:text-amber-100">
-        {{ overpaidContracts.length }} ta shartnomada ortiqcha to'lov bor. Iltimos, bank ma'lumotlari bilan solishtiring.
+        <div class="font-semibold">{{ overpaidContracts.length }} ta shartnomada ortiqcha to'lov bor.</div>
+        <div class="text-xs text-amber-700 dark:text-amber-200">Iltimos, bank ma'lumotlari bilan solishtiring.</div>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <router-link
+            v-for="c in overpaidContractsDetail"
+            :key="c.id"
+            :to="`/contracts/${c.id}`"
+            class="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-[12px] font-semibold text-amber-800 shadow-sm ring-1 ring-amber-200 hover:bg-white dark:bg-amber-900/40 dark:text-amber-100 dark:ring-amber-700"
+          >
+            <span>#{{ c.id }} ({{ c.storeNumber || '-' }})</span>
+            <span class="text-amber-600 dark:text-amber-200">+{{ formatAmount(c.overAmount) }}</span>
+          </router-link>
+        </div>
       </div>
     </SectionMain>
   </LayoutAuthenticated>
