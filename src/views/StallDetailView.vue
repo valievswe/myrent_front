@@ -73,6 +73,13 @@ function formatDate(value) {
   return formatTashkentDate(value) || '-'
 }
 
+function statusLabel(status, transactionStatus) {
+  if (status === 'PAID' || transactionStatus === 'PAID') return "To'langan"
+  if (status === 'PENDING' || transactionStatus === 'PENDING') return 'Jarayonda'
+  if (status === 'FAILED' || transactionStatus === 'FAILED') return 'Bekor'
+  return "To'lanmagan"
+}
+
 function navigateBack() {
   router.push({ name: 'stalls' })
 }
@@ -184,13 +191,14 @@ onMounted(async () => {
               <td class="px-4 py-2">{{ item.amount }}</td>
               <td class="px-4 py-2">
                 <span
-                  :class="
-                    item.status === 'PAID' || item.transaction?.status === 'PAID'
-                      ? 'text-emerald-600'
-                      : 'text-gray-600'
-                  "
+                  class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-semibold"
+                  :class="item.status === 'PAID' || item.transaction?.status === 'PAID'
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200'
+                    : 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-200'"
                 >
-                  {{ item.status }}
+                  <span v-if="item.status === 'PAID' || item.transaction?.status === 'PAID'">✔</span>
+                  <span v-else>✕</span>
+                  {{ statusLabel(item.status, item.transaction?.status) }}
                 </span>
               </td>
               <td class="px-4 py-2">

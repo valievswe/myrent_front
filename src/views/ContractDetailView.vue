@@ -104,10 +104,13 @@ function paymentStatusLabel(status) {
       return "To'langan"
     case 'PENDING':
       return 'Jarayonda'
+    case 'FAILED':
+    case 'CANCELLED':
+      return 'Bekor'
     case 'REVERSED':
       return 'Bekor qilingan'
     default:
-      return status
+      return "To'lanmagan"
   }
 }
 
@@ -198,6 +201,11 @@ function formatDate(value) {
   return formatTashkentDate(value) || '-'
 }
 
+function periodLabel(payment) {
+  if (!payment) return '-'
+  return `${formatDate(payment.periodStart)} — ${formatDate(payment.periodEnd)}`
+}
+
 function navigateBack() {
   router.push({ name: 'contracts' })
 }
@@ -277,6 +285,21 @@ onMounted(async () => {
         <div v-else class="text-sm text-gray-500">Hozircha davrlar haqida ma'lumot yo'q.</div>
         <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">
           Status: {{ outstandingLabel() }}
+        </div>
+        <div v-if="paymentState.items.length" class="mt-4 flex flex-wrap items-center gap-2">
+          <span class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">Oylik holat:</span>
+          <span
+            v-for="payment in paymentState.items"
+            :key="payment.id"
+            class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[12px] font-semibold"
+            :class="payment.status === 'PAID'
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-100'
+              : 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-900/40 dark:text-rose-100'"
+          >
+            <span v-if="payment.status === 'PAID'">✔</span>
+            <span v-else>✕</span>
+            <span>{{ formatDate(payment.periodStart) }}</span>
+          </span>
         </div>
         <div
           v-if="paymentState.error"

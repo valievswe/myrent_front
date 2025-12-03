@@ -12,6 +12,8 @@ import { formatTashkentDate, formatTashkentDateTime } from '@/utils/time'
 const loading = ref(false)
 const ledger = ref({ rows: [], from: null, to: null })
 const contracts = ref([])
+const visibleLedger = ref(50)
+const visibleContracts = ref(50)
 const rollup = ref({ labels: [], series: [] })
 const errorMsg = ref('')
 
@@ -62,6 +64,14 @@ currentMonthDefaults()
 function formatAmount(value) {
   const n = Number(value || 0)
   return currency.format(Number.isFinite(n) ? n : 0)
+}
+
+function statusLabel(status) {
+  if (status === 'PAID') return "To'langan"
+  if (status === 'PENDING') return 'Jarayonda'
+  if (status === 'UNPAID') return "To'lanmagan"
+  if (status === 'FAILED' || status === 'CANCELLED') return 'Bekor'
+  return status || '-'
 }
 
 const ledgerTotals = computed(() => {
@@ -143,6 +153,8 @@ async function loadData() {
     ledger.value = ledgerRes || { rows: [] }
     contracts.value = contractRes?.summary || []
     rollup.value = rollupRes || { labels: [], series: [] }
+    visibleLedger.value = 50
+    visibleContracts.value = 50
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || e.message || "Hisob-kitob ma'lumotlari olinmadi"
     ledger.value = { rows: [] }
@@ -293,7 +305,7 @@ function exportLedger() {
                 <td colspan="8" class="px-4 py-3 text-center text-slate-500 dark:text-slate-300">Ma'lumot yo'q</td>
               </tr>
               <tr
-                v-for="row in ledger.rows"
+                v-for="row in ledger.rows?.slice(0, visibleLedger)"
                 :key="`${row.source}-${row.id}`"
                 class="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/70"
               >
@@ -302,7 +314,23 @@ function exportLedger() {
                   <div class="text-[11px] text-slate-500 dark:text-slate-400">{{ formatTashkentDateTime(row.paidAt) }}</div>
                 </td>
                 <td class="px-4 py-2 capitalize text-slate-700 dark:text-slate-100">{{ row.type }}</td>
-                <td class="px-4 py-2 text-slate-700 dark:text-slate-100">{{ row.contractId || row.stallId || '-' }}</td>
+                <td class="px-4 py-2 text-slate-700 dark:text-slate-100">
+                  <router-link
+                    v-if="row.type === 'store' && row.contractId"
+                    class="text-sky-600 underline dark:text-sky-300"
+                    :to="`/contracts/${row.contractId}`"
+                  >
+                    #{{ row.contractId }}
+                  </router-link>
+                  <router-link
+                    v-else-if="row.type === 'stall' && row.stallId"
+                    class="text-sky-600 underline dark:text-sky-300"
+                    :to="`/stalls/${row.stallId}`"
+                  >
+                    #{{ row.stallId }}
+                  </router-link>
+                  <span v-else>-</span>
+                </td>
                 <td class="px-4 py-2 text-slate-700 dark:text-slate-100">{{ row.sectionName || '-' }}</td>
                 <td class="px-4 py-2 text-slate-700 dark:text-slate-100">{{ row.method || '-' }}</td>
                 <td class="px-4 py-2">
@@ -314,7 +342,7 @@ function exportLedger() {
                       ? 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-200'
                       : 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-200'"
                   >
-                    {{ row.status || '-' }}
+                    {{ statusLabel(row.status) }}
                   </span>
                 </td>
                 <td class="px-4 py-2 text-right font-semibold text-slate-900 dark:text-slate-50">{{ formatAmount(row.amount) }}</td>
@@ -322,6 +350,9 @@ function exportLedger() {
               </tr>
             </tbody>
           </table>
+        </div>
+        <div v-if="(ledger.rows?.length || 0) > visibleLedger" class="p-4 text-center">
+          <BaseButton color="info" outline label="Ko'proq ko'rish" @click="visibleLedger += 50" />
         </div>
       </CardBox>
 
@@ -352,11 +383,15 @@ function exportLedger() {
                 <td colspan="8" class="px-4 py-3 text-center text-slate-500 dark:text-slate-300">Ma'lumot yo'q</td>
               </tr>
               <tr
-                v-for="c in contracts"
+                v-for="c in contracts.slice(0, visibleContracts)"
                 :key="c.contractId"
                 class="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/70"
               >
-                <td class="px-4 py-2 text-slate-700 dark:text-slate-100">#{{ c.contractId }}</td>
+                <td class="px-4 py-2 text-slate-700 dark:text-slate-100">
+                  <router-link :to="`/contracts/${c.contractId}`" class="text-sky-600 underline dark:text-sky-300">
+                    #{{ c.contractId }}
+                  </router-link>
+                </td>
                 <td class="px-4 py-2 text-slate-700 dark:text-slate-100">{{ c.storeNumber }}</td>
                 <td class="px-4 py-2 text-slate-700 dark:text-slate-100">{{ c.sectionName || '-' }}</td>
                 <td class="px-4 py-2 text-right text-slate-700 dark:text-slate-100">{{ formatAmount(c.expected) }}</td>
@@ -381,6 +416,9 @@ function exportLedger() {
               </tr>
             </tbody>
           </table>
+        </div>
+        <div v-if="contracts.length > visibleContracts" class="p-4 text-center">
+          <BaseButton color="info" outline label="Ko'proq ko'rish" @click="visibleContracts += 50" />
         </div>
       </CardBox>
 
