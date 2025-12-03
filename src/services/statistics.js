@@ -14,6 +14,20 @@ export async function getMonthlyStatistics(type) {
   return data // { count, revenue }
 }
 
+export async function getMonthlyStatisticsByMonth(year, month, type) {
+  const params = {}
+  if (type) params.type = type
+  const { data } = await http.get(`/statistics/monthly/${year}/${month}`, { params })
+  return data // { month, count, revenue, stall, store }
+}
+
+export async function getMonthlyDetails(year, month, type) {
+  const params = {}
+  if (type) params.type = type
+  const { data } = await http.get(`/statistics/monthly/${year}/${month}/details`, { params })
+  return data // { totals, stall, store, methods }
+}
+
 export async function getCurrentMonthIncome(type) {
   const params = {}
   if (type) params.type = type
@@ -32,4 +46,10 @@ export async function getStatisticsSeries(filters = {}) {
   const params = { groupBy: 'daily', ...filters }
   const { data } = await http.get('/statistics/series', { params })
   return data // { labels, series: [{ key, data }] }
+}
+
+export async function getMonthlySeries(filters = {}) {
+  const params = { months: 12, ...filters }
+  const { data } = await http.get('/statistics/series/monthly', { params })
+  return data // { labels: ['2024-01', ...], series }
 }

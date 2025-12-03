@@ -6,7 +6,14 @@ import SectionTitle from '@/components/SectionTitle.vue'
 import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import LineChart from '@/components/Charts/LineChart.vue'
-import { getDailyStatistics, getMonthlyStatistics, getCurrentMonthIncome, getStatisticsTotals, getStatisticsSeries } from '@/services/statistics'
+import {
+  getDailyStatistics,
+  getMonthlyStatisticsByMonth,
+  getMonthlyDetails,
+  getStatisticsTotals,
+  getStatisticsSeries,
+  getMonthlySeries,
+} from '@/services/statistics'
 import { listAttendances } from '@/services/attendances'
 import { listContracts } from '@/services/contracts'
 import { listSections } from '@/services/sections'
@@ -24,20 +31,33 @@ const monthlyAll = ref({ count: 0, revenue: 0 })
 const monthlyStalls = ref({ count: 0, revenue: 0 })
 const monthlyStores = ref({ count: 0, revenue: 0 })
 
-const monthRevenueAll = ref({ revenue: 0 })
-const monthRevenueStalls = ref({ revenue: 0 })
-const monthRevenueStores = ref({ revenue: 0 })
+const monthDetails = ref({
+  month: '',
+  totals: { count: 0, revenue: 0 },
+  stall: { count: 0, revenue: 0 },
+  store: { count: 0, revenue: 0 },
+  methods: {
+    CASH: { count: 0, revenue: 0 },
+    PAYME: { count: 0, revenue: 0 },
+    CLICK: { count: 0, revenue: 0 },
+  },
+})
 
 const monthDays = ref([])
 const stallsDaily = ref([]) // numbers per day
 const storesDaily = ref([]) // numbers per day
 const sectionDailySummary = ref([])
 const sections = ref([])
+const allAttendances = ref([])
+const allContracts = ref([])
 
 // Filtered series and totals
 const seriesLabels = ref([])
 const stallsSeries = ref([])
 const storesSeries = ref([])
+const monthlySeriesLabels = ref([])
+const monthlySeriesStalls = ref([])
+const monthlySeriesStores = ref([])
 const filteredTotals = ref({ count: 0, revenue: 0 })
 const filteredCashTotals = ref({ count: 0, revenue: 0 })
 const filteredBankTotals = ref({ count: 0, revenue: 0 })
@@ -81,7 +101,10 @@ const monthFormatter = new Intl.DateTimeFormat('uz-UZ', {
 })
 
 const todayLabel = computed(() => dateFormatter.format(new Date()))
-const currentMonthLabel = computed(() => monthFormatter.format(new Date()))
+const selectedMonthLabel = computed(() => {
+  const { year, monthIndex } = parseMonthKey(selectedMonth.value)
+  return monthFormatter.format(new Date(year, monthIndex, 1))
+})
 
 // Filters
 const filterType = ref('all') // all|stall|store
@@ -91,17 +114,39 @@ const filterFrom = ref('')
 const filterTo = ref('')
 const filterGroupBy = ref('daily')
 
-function defaultMonthRange() {
-  const d = new Date()
-  const from = new Date(d.getFullYear(), d.getMonth(), 1)
-  const to = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999)
-  return { from: from.toISOString(), to: to.toISOString() }
+const selectedMonth = ref('')
+const monthOptions = computed(() => {
+  const now = new Date()
+  const opts = []
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    opts.push({
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      label: monthFormatter.format(d),
+    })
+  }
+  return opts
+})
+
+function parseMonthKey(key) {
+  const [y, m] = String(key || '').split('-').map((v) => Number(v))
+  const year = Number.isFinite(y) ? y : new Date().getFullYear()
+  const monthIndex = Number.isFinite(m) && m >= 1 && m <= 12 ? m - 1 : new Date().getMonth()
+  return { year, monthIndex }
 }
+
+function setMonthRangeFromSelection(key) {
+  const { year, monthIndex } = parseMonthKey(key)
+  const fromDate = new Date(year, monthIndex, 1)
+  const toDate = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999)
+  filterFrom.value = fromDate.toISOString()
+  filterTo.value = toDate.toISOString()
+}
+
 // initialize defaults
-;(function initDefaultRange() {
-  const { from, to } = defaultMonthRange()
-  filterFrom.value = from
-  filterTo.value = to
+;(function initDefaultMonth() {
+  selectedMonth.value = monthOptions.value[0]?.key || ''
+  setMonthRangeFromSelection(selectedMonth.value)
 })()
 
 function formatCount(value) {
@@ -113,12 +158,10 @@ function daysInMonth(year, monthIndex) {
   return new Date(year, monthIndex + 1, 0).getDate()
 }
 
-function computeDailySeries(attendances = [], contracts = []) {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = now.getMonth()
+function computeDailySeries(attendances = [], contracts = [], monthKey = selectedMonth.value) {
+  const { year, monthIndex } = parseMonthKey(monthKey)
   const labels = []
-  const length = daysInMonth(y, m)
+  const length = daysInMonth(year, monthIndex)
   for (let i = 1; i <= length; i++) labels.push(String(i))
   monthDays.value = labels
 
@@ -128,7 +171,7 @@ function computeDailySeries(attendances = [], contracts = []) {
   for (const attendance of attendances) {
     if (!attendance || !attendance.date) continue
     const d = new Date(attendance.date)
-    if (d.getFullYear() !== y || d.getMonth() !== m) continue
+    if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue
     const isPaid =
       attendance.status === 'PAID' ||
       attendance.transaction?.status === 'PAID'
@@ -142,7 +185,7 @@ function computeDailySeries(attendances = [], contracts = []) {
     for (const tx of contract?.transactions || []) {
       if (tx.status !== 'PAID' || !tx.createdAt) continue
       const d = new Date(tx.createdAt)
-      if (d.getFullYear() !== y || d.getMonth() !== m) continue
+      if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue
       const day = d.getDate()
       const amount = Number((tx.amount && tx.amount.toString()) || 0)
       storesArr[day - 1] += amount
@@ -194,6 +237,37 @@ async function fetchFilteredStats() {
   }
 }
 
+async function fetchMonthStats() {
+  const { year, monthIndex } = parseMonthKey(selectedMonth.value)
+  const monthNumber = monthIndex + 1
+  const [all, stalls, stores, details] = await Promise.all([
+    getMonthlyStatisticsByMonth(year, monthNumber),
+    getMonthlyStatisticsByMonth(year, monthNumber, 'stall'),
+    getMonthlyStatisticsByMonth(year, monthNumber, 'store'),
+    getMonthlyDetails(year, monthNumber),
+  ])
+  monthlyAll.value = all || { count: 0, revenue: 0 }
+  monthlyStalls.value = stalls || { count: 0, revenue: 0 }
+  monthlyStores.value = stores || { count: 0, revenue: 0 }
+  monthDetails.value = details || monthDetails.value
+}
+
+async function fetchMonthlySeriesChart() {
+  try {
+    const res = await getMonthlySeries({ months: 12, type: filterType.value || 'all' })
+    const labels = Array.isArray(res?.labels) ? res.labels : []
+    monthlySeriesLabels.value = labels
+    const stall = (res?.series || []).find((s) => s.key === 'stall')
+    const store = (res?.series || []).find((s) => s.key === 'store')
+    monthlySeriesStalls.value = Array.isArray(stall?.data) ? stall.data : new Array(labels.length).fill(0)
+    monthlySeriesStores.value = Array.isArray(store?.data) ? store.data : new Array(labels.length).fill(0)
+  } catch (e) {
+    monthlySeriesLabels.value = []
+    monthlySeriesStalls.value = []
+    monthlySeriesStores.value = []
+  }
+}
+
 async function fetchAllAttendances({ pageSize = 200, maxPages = 25 } = {}) {
   const results = []
   let currentPage = 1
@@ -241,9 +315,11 @@ async function loadDetailedData() {
       fetchAllContracts(),
       loadSectionsList(),
     ])
+    allAttendances.value = att
+    allContracts.value = cons
     stallDebtSummary.value = summarizeAttendanceDebts(att)
     contractDebtSummary.value = summarizeContractDebts(cons, { asOf: new Date() })
-    computeDailySeries(att, cons)
+    computeDailySeries(att, cons, selectedMonth.value)
     computeSectionDaily(att, cons, sec)
   } catch (e) {
     debtError.value = e?.response?.data?.message || e.message || 'Qarzdorlikni hisoblashda xatolik'
@@ -380,6 +456,61 @@ const chartData = computed(() => {
   }
 })
 
+const monthlyChartData = computed(() => {
+  const datasets = []
+  if (statsFilter.value === 'all' || statsFilter.value === 'stall') {
+    datasets.push({
+      label: 'Rasta (oylik)',
+      fill: true,
+      borderColor: '#fb7185',
+      pointBackgroundColor: '#fb7185',
+      backgroundColor: 'rgba(251,113,133,0.15)',
+      borderWidth: 3,
+      pointRadius: 2,
+      data: monthlySeriesStalls.value,
+      tension: 0.25,
+    })
+  }
+  if (statsFilter.value === 'all' || statsFilter.value === 'store') {
+    datasets.push({
+      label: "Do'kon (oylik)",
+      fill: true,
+      borderColor: '#38bdf8',
+      pointBackgroundColor: '#38bdf8',
+      backgroundColor: 'rgba(56,189,248,0.15)',
+      borderWidth: 3,
+      pointRadius: 2,
+      data: monthlySeriesStores.value,
+      tension: 0.25,
+    })
+  }
+  return {
+    labels: monthlySeriesLabels.value,
+    datasets,
+  }
+})
+
+const monthMethodRows = computed(() => [
+  {
+    key: 'CASH',
+    label: 'Naqd (CASH)',
+    revenue: formatAmount(monthDetails.value.methods?.CASH?.revenue),
+    count: formatCount(monthDetails.value.methods?.CASH?.count),
+  },
+  {
+    key: 'PAYME',
+    label: 'Payme',
+    revenue: formatAmount(monthDetails.value.methods?.PAYME?.revenue),
+    count: formatCount(monthDetails.value.methods?.PAYME?.count),
+  },
+  {
+    key: 'CLICK',
+    label: 'Click',
+    revenue: formatAmount(monthDetails.value.methods?.CLICK?.revenue),
+    count: formatCount(monthDetails.value.methods?.CLICK?.count),
+  },
+])
+
 const chartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
@@ -420,45 +551,45 @@ const dailyCards = computed(() => [
     title: "Bugun (Jami)",
     revenue: formatAmount(dailyAll.value.revenue),
     count: formatCount(dailyAll.value.count),
-    accent: 'from-slate-100 to-slate-50',
+    accent: 'from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900',
   },
   {
     key: 'stall',
     title: "Bugun (Rastalar)",
     revenue: formatAmount(dailyStalls.value.revenue),
     count: formatCount(dailyStalls.value.count),
-    accent: 'from-orange-50 to-amber-50',
+    accent: 'from-orange-50 to-amber-50 dark:from-amber-900 dark:to-amber-950',
   },
   {
     key: 'store',
     title: "Bugun (Do'konlar)",
     revenue: formatAmount(dailyStores.value.revenue),
     count: formatCount(dailyStores.value.count),
-    accent: 'from-sky-50 to-blue-50',
+    accent: 'from-sky-50 to-blue-50 dark:from-sky-900 dark:to-slate-900',
   },
 ])
 
 const monthlyCards = computed(() => [
   {
     key: 'all',
-    title: "Joriy oy (Jami)",
-    revenue: formatAmount(monthRevenueAll.value.revenue),
+    title: "Tanlangan oy (Jami)",
+    revenue: formatAmount(monthlyAll.value.revenue),
     count: formatCount(monthlyAll.value.count),
-    accent: 'from-slate-100 to-slate-50',
+    accent: 'from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900',
   },
   {
     key: 'stall',
-    title: "Joriy oy (Rastalar)",
-    revenue: formatAmount(monthRevenueStalls.value.revenue),
+    title: "Tanlangan oy (Rastalar)",
+    revenue: formatAmount(monthlyStalls.value.revenue),
     count: formatCount(monthlyStalls.value.count),
-    accent: 'from-orange-50 to-amber-50',
+    accent: 'from-orange-50 to-amber-50 dark:from-amber-900 dark:to-amber-950',
   },
   {
     key: 'store',
-    title: "Joriy oy (Do'konlar)",
-    revenue: formatAmount(monthRevenueStores.value.revenue),
+    title: "Tanlangan oy (Do'konlar)",
+    revenue: formatAmount(monthlyStores.value.revenue),
     count: formatCount(monthlyStores.value.count),
-    accent: 'from-sky-50 to-blue-50',
+    accent: 'from-sky-50 to-blue-50 dark:from-sky-900 dark:to-slate-900',
   },
 ])
 
@@ -529,8 +660,9 @@ const coverageCards = computed(() => {
 const insightCards = computed(() => {
   const avgTicket =
     dailyAll.value.count > 0 ? dailyAll.value.revenue / dailyAll.value.count : dailyAll.value.revenue
-  const daysPassed = Math.max(1, new Date().getDate())
-  const monthlyAvg = (monthRevenueAll.value.revenue || 0) / daysPassed
+  const { year, monthIndex } = parseMonthKey(selectedMonth.value)
+  const monthLength = daysInMonth(year, monthIndex)
+  const monthlyAvg = (monthlyAll.value.revenue || 0) / Math.max(1, monthLength)
   const totalDebt = (contractDebtSummary.value.debt || 0) + (stallDebtSummary.value.debt || 0)
   return [
     {
@@ -564,14 +696,6 @@ async function fetchStats() {
     dailyAll.value = await getDailyStatistics()
     dailyStalls.value = await getDailyStatistics('stall')
     dailyStores.value = await getDailyStatistics('store')
-
-    monthlyAll.value = await getMonthlyStatistics()
-    monthlyStalls.value = await getMonthlyStatistics('stall')
-    monthlyStores.value = await getMonthlyStatistics('store')
-
-    monthRevenueAll.value = await getCurrentMonthIncome()
-    monthRevenueStalls.value = await getCurrentMonthIncome('stall')
-    monthRevenueStores.value = await getCurrentMonthIncome('store')
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || 'Statistikani olishda xatolik'
   } finally {
@@ -581,15 +705,29 @@ async function fetchStats() {
 
 onMounted(async () => {
   await fetchStats()
+  await fetchMonthStats()
   await loadDetailedData()
   await fetchFilteredStats()
+  await fetchMonthlySeriesChart()
 })
 
 // Debounce filters
 let filterDebounce
 watch([filterFrom, filterTo, filterType, filterMethod, filterStatus, filterGroupBy], () => {
   if (filterDebounce) clearTimeout(filterDebounce)
-  filterDebounce = setTimeout(fetchFilteredStats, 350)
+  filterDebounce = setTimeout(() => {
+    fetchFilteredStats()
+    fetchMonthlySeriesChart()
+  }, 350)
+})
+
+watch(selectedMonth, (key) => {
+  setMonthRangeFromSelection(key)
+  fetchMonthStats()
+  if (allAttendances.value.length || allContracts.value.length) {
+    computeDailySeries(allAttendances.value, allContracts.value, key)
+  }
+  fetchFilteredStats()
 })
 </script>
 
@@ -634,6 +772,12 @@ watch([filterFrom, filterTo, filterType, filterMethod, filterStatus, filterGroup
           />
         </div>
         <div class="flex flex-wrap items-center gap-2 text-sm">
+          <label class="text-slate-600 dark:text-slate-300">Oy</label>
+          <select v-model="selectedMonth" class="rounded border px-2 py-1 text-sm dark:bg-slate-900">
+            <option v-for="opt in monthOptions" :key="opt.key" :value="opt.key">
+              {{ opt.label }}
+            </option>
+          </select>
           <label class="text-slate-600 dark:text-slate-300">Turi</label>
           <select v-model="filterType" class="rounded border px-2 py-1 text-sm dark:bg-slate-900">
             <option value="all">Jami</option>
@@ -652,10 +796,6 @@ watch([filterFrom, filterTo, filterType, filterMethod, filterStatus, filterGroup
             <option value="PAID">PAID</option>
             <option value="UNPAID">UNPAID</option>
           </select>
-          <label class="text-slate-600 dark:text-slate-300">Dan</label>
-          <input v-model="filterFrom" type="datetime-local" class="rounded border px-2 py-1 text-sm dark:bg-slate-900" />
-          <label class="text-slate-600 dark:text-slate-300">Gacha</label>
-          <input v-model="filterTo" type="datetime-local" class="rounded border px-2 py-1 text-sm dark:bg-slate-900" />
           <label class="text-slate-600 dark:text-slate-300">Guruh</label>
           <select v-model="filterGroupBy" class="rounded border px-2 py-1 text-sm dark:bg-slate-900">
             <option value="daily">Kunlik</option>
@@ -708,13 +848,63 @@ watch([filterFrom, filterTo, filterType, filterMethod, filterStatus, filterGroup
           >
             <div class="flex items-center justify-between text-sm font-medium text-gray-500 dark:text-gray-300">
               <span>{{ card.title }}</span>
-              <span class="text-xs uppercase text-gray-400 dark:text-gray-300">{{ currentMonthLabel }}</span>
+              <span class="text-xs uppercase text-gray-400 dark:text-gray-300">{{ selectedMonthLabel }}</span>
             </div>
             <div class="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100 md:text-4xl">{{ card.revenue }}</div>
             <div class="text-xs text-gray-500 dark:text-gray-300">Tranzaksiyalar: {{ card.count }}</div>
           </div>
         </CardBox>
       </div>
+
+      <CardBox class="mb-6">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 pb-3 pt-4 dark:border-slate-700">
+          <div>
+            <div class="text-sm font-semibold text-slate-800 dark:text-slate-100">Tanlangan oy bo'yicha to'lovlar</div>
+            <div class="text-xs text-slate-500 dark:text-slate-300">{{ selectedMonthLabel }}</div>
+          </div>
+          <div class="text-sm text-slate-600 dark:text-slate-200">
+            Jami: {{ formatAmount(monthDetails.totals?.revenue) }} so'm · {{ formatCount(monthDetails.totals?.count) }} trx
+          </div>
+        </div>
+        <div class="grid gap-4 p-6 md:grid-cols-3">
+          <div class="rounded-xl border border-slate-100 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800">
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">Jami tushum</div>
+            <div class="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100">{{ formatAmount(monthDetails.totals?.revenue) }}</div>
+            <div class="text-xs text-slate-500 dark:text-slate-300">Tranzaksiyalar: {{ formatCount(monthDetails.totals?.count) }}</div>
+          </div>
+          <div class="rounded-xl border border-slate-100 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800">
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">Rasta vs Do'kon</div>
+            <div class="mt-2 flex items-baseline gap-3">
+              <div>
+                <div class="text-sm text-amber-600 dark:text-amber-300">Rasta</div>
+                <div class="text-xl font-semibold text-slate-900 dark:text-slate-100">{{ formatAmount(monthDetails.stall?.revenue) }}</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">{{ formatCount(monthDetails.stall?.count) }} trx</div>
+              </div>
+              <div>
+                <div class="text-sm text-sky-600 dark:text-sky-300">Do'kon</div>
+                <div class="text-xl font-semibold text-slate-900 dark:text-slate-100">{{ formatAmount(monthDetails.store?.revenue) }}</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">{{ formatCount(monthDetails.store?.count) }} trx</div>
+              </div>
+            </div>
+          </div>
+          <div class="rounded-xl border border-slate-100 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800">
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">To'lov usuli</div>
+            <div class="mt-2 space-y-2">
+              <div
+                v-for="method in monthMethodRows"
+                :key="method.key"
+                class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-700"
+              >
+                <div class="text-slate-600 dark:text-slate-200">{{ method.label }}</div>
+                <div class="text-right">
+                  <div class="font-semibold text-slate-900 dark:text-slate-100">{{ method.revenue }}</div>
+                  <div class="text-[11px] text-slate-500 dark:text-slate-300">{{ method.count }} trx</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardBox>
 
       <CardBox class="mb-6">
         <div class="grid gap-4 md:grid-cols-3">
@@ -888,12 +1078,27 @@ watch([filterFrom, filterTo, filterType, filterMethod, filterStatus, filterGroup
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <div class="text-sm font-semibold">Joriy oy: kunlik tushum (Rasta vs Do'kon)</div>
-              <div class="text-xs text-gray-500">{{ currentMonthLabel }}</div>
+              <div class="text-xs text-gray-500">{{ selectedMonthLabel }}</div>
             </div>
             <div class="text-xs text-gray-500">Kunlar kesimida umumiy tushum</div>
           </div>
           <div style="height: 360px">
             <LineChart :data="chartData" :options="chartOptions" />
+          </div>
+        </div>
+      </CardBox>
+
+      <CardBox class="mt-6">
+        <div class="p-6">
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div class="text-sm font-semibold">Oylik trend: so'nggi 12 oy</div>
+              <div class="text-xs text-gray-500">Rasta va do'kon tushumlari</div>
+            </div>
+            <div class="text-xs text-gray-500">Oylik kesimda jamlangan</div>
+          </div>
+          <div style="height: 320px">
+            <LineChart :data="monthlyChartData" :options="chartOptions" />
           </div>
         </div>
       </CardBox>
