@@ -6,7 +6,7 @@ import SectionTitle from '@/components/SectionTitle.vue'
 import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import LineChart from '@/components/Charts/LineChart.vue'
-import { getLedger, getContractSummary, getMonthlyRollup } from '@/services/reconciliation'
+import { getLedger, getMonthlyRollup, getContractsMonthlyStatus } from '@/services/reconciliation'
 import { formatTashkentDate, formatTashkentDateTime } from '@/utils/time'
 import * as XLSX from 'xlsx'
 
@@ -85,15 +85,9 @@ const ledgerTotals = computed(() => {
   return totals
 })
 
-const overpaidContracts = computed(() => contracts.value.filter((c) => c.overpaid))
-const overpaidContractsDetail = computed(() =>
-  overpaidContracts.value.map((c) => ({
-    id: c.contractId,
-    storeNumber: c.storeNumber,
-    sectionName: c.sectionName,
-    overAmount: Number(c.paid || 0) - Number(c.expected || 0),
-  })),
-)
+// With monthly-status semantics, we do not compute overpaid here.
+const overpaidContracts = computed(() => [])
+const overpaidContractsDetail = computed(() => [])
 
 const chartData = computed(() => {
   const labels = rollup.value.labels || []
@@ -154,13 +148,36 @@ async function loadData() {
       method: filterMethod.value || undefined,
       status: filterStatus.value === 'all' ? undefined : filterStatus.value,
     }
-    const [ledgerRes, contractRes, rollupRes] = await Promise.all([
+    const [ledgerRes, monthlyStatus, rollupRes] = await Promise.all([
       getLedger(params),
-      getContractSummary(params),
+      getContractsMonthlyStatus({ year, month }),
       getMonthlyRollup({ months: 12, type: filterType.value, method: filterMethod.value || undefined }),
     ])
     ledger.value = ledgerRes || { rows: [] }
-    contracts.value = contractRes?.summary || []
+    // Transform monthly status into rows compatible with table
+    const paidRows = (monthlyStatus?.paid || []).map((p) => ({
+      contractId: p.contractId,
+      storeNumber: p.storeNumber,
+      sectionName: p.sectionName,
+      expected: Number(p.monthlyFee || 0),
+      paid: Number(p.amount || p.monthlyFee || 0),
+      unpaid: 0,
+      overpaid: false,
+      lastPaymentAt: p.lastPaymentAt || null,
+      lastPaymentMethod: p.lastPaymentMethod || null,
+    }))
+    const unpaidRows = (monthlyStatus?.unpaid || []).map((u) => ({
+      contractId: u.contractId,
+      storeNumber: u.storeNumber,
+      sectionName: u.sectionName,
+      expected: Number(u.monthlyFee || 0),
+      paid: 0,
+      unpaid: Number(u.debt || u.monthlyFee || 0),
+      overpaid: false,
+      lastPaymentAt: null,
+      lastPaymentMethod: null,
+    }))
+    contracts.value = [...unpaidRows, ...paidRows]
     rollup.value = rollupRes || { labels: [], series: [] }
     visibleLedger.value = 50
     visibleContracts.value = 50
