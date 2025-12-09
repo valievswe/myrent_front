@@ -11,10 +11,14 @@ import { formatTashkentDate, formatTashkentDateTime } from '@/utils/time'
 import * as XLSX from 'xlsx'
 
 const loading = ref(false)
-const ledger = ref({ rows: [], from: null, to: null })
+// Ledger includes server-side pagination meta when available
+const ledger = ref({ rows: [], from: null, to: null, pagination: { total: 0, page: 1, limit: 50, totalPages: 1 } })
 const contracts = ref([])
-const visibleLedger = ref(50)
-const visibleContracts = ref(50)
+// Pagination state
+const ledgerPage = ref(1)
+const ledgerPageSize = ref(50)
+const contractsPage = ref(1)
+const contractsPageSize = ref(50)
 const rollup = ref({ labels: [], series: [] })
 const errorMsg = ref('')
 
@@ -149,11 +153,11 @@ async function loadData() {
       status: filterStatus.value === 'all' ? undefined : filterStatus.value,
     }
     const [ledgerRes, monthlyStatus, rollupRes] = await Promise.all([
-      getLedger(params),
+      getLedger({ ...params, page: ledgerPage.value, limit: ledgerPageSize.value }),
       getContractsMonthlyStatus({ year, month }),
       getMonthlyRollup({ months: 12, type: filterType.value, method: filterMethod.value || undefined }),
     ])
-    ledger.value = ledgerRes || { rows: [] }
+    ledger.value = ledgerRes || { rows: [], pagination: { total: 0, page: 1, limit: 50, totalPages: 1 } }
     // Transform monthly status into rows compatible with table
     const paidRows = (monthlyStatus?.paid || []).map((p) => ({
       contractId: p.contractId,
@@ -179,11 +183,11 @@ async function loadData() {
     }))
     contracts.value = [...unpaidRows, ...paidRows]
     rollup.value = rollupRes || { labels: [], series: [] }
-    visibleLedger.value = 50
-    visibleContracts.value = 50
+    // reset contracts pagination on reload
+    contractsPage.value = 1
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || e.message || "Hisob-kitob ma'lumotlari olinmadi"
-    ledger.value = { rows: [] }
+    ledger.value = { rows: [], pagination: { total: 0, page: 1, limit: 50, totalPages: 1 } }
     contracts.value = []
     rollup.value = { labels: [], series: [] }
   } finally {
@@ -192,7 +196,20 @@ async function loadData() {
 }
 
 onMounted(loadData)
-watch([selectedMonth, filterType, filterMethod, filterStatus], loadData)
+watch([selectedMonth, filterType, filterMethod, filterStatus], () => {
+  ledgerPage.value = 1
+  loadData()
+})
+watch([ledgerPage, ledgerPageSize], loadData)
+
+// Client-side pagination for contracts
+const contractsPaged = computed(() => {
+  const page = contractsPage.value
+  const size = contractsPageSize.value
+  const start = (page - 1) * size
+  return contracts.value.slice(start, start + size)
+})
+const contractsTotalPages = computed(() => Math.max(1, Math.ceil((contracts.value.length || 0) / (contractsPageSize.value || 50))))
 
 function exportLedger() {
   const rows = ledger.value.rows || []
@@ -339,11 +356,13 @@ function exportLedger() {
       <CardBox class="mb-6">
         <div class="flex items-center justify-between border-b border-slate-100 px-6 pb-3 pt-4 text-sm font-semibold text-slate-800 dark:border-slate-700 dark:text-slate-100">
           <span>Kunlik daftar (Tashkent TZ)</span>
-          <span class="text-xs text-slate-500 dark:text-slate-300">{{ ledger?.rows?.length || 0 }} qator</span>
+          <span class="text-xs text-slate-500 dark:text-slate-300">
+            Jami: {{ ledger?.pagination?.total || ledger?.rows?.length || 0 }} · Sahifa: {{ ledger?.pagination?.page || 1 }}/{{ ledger?.pagination?.totalPages || 1 }}
+          </span>
         </div>
-        <div class="overflow-x-auto">
+        <div class="overflow-x-auto" style="max-height: 60vh">
           <table class="w-full table-auto text-sm">
-            <thead>
+            <thead style="position: sticky; top: 0; z-index: 1" class="bg-slate-50 dark:bg-slate-800">
               <tr class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                 <th class="px-4 py-2">Sana</th>
                 <th class="px-4 py-2">Turi</th>
@@ -364,7 +383,7 @@ function exportLedger() {
                 <td colspan="8" class="px-4 py-3 text-center text-slate-500 dark:text-slate-300">Ma'lumot yo'q</td>
               </tr>
               <tr
-                v-for="row in ledger.rows?.slice(0, visibleLedger)"
+                v-for="row in ledger.rows"
                 :key="`${row.source}-${row.id}`"
                 class="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/70"
               >
@@ -414,8 +433,22 @@ function exportLedger() {
             </tbody>
           </table>
         </div>
-        <div v-if="(ledger.rows?.length || 0) > visibleLedger" class="p-4 text-center">
-          <BaseButton color="info" outline label="Ko'proq ko'rish" @click="visibleLedger += 50" />
+        <div class="flex items-center justify-between gap-3 p-4 text-sm">
+          <div class="text-slate-600 dark:text-slate-300">
+            Ko'rsatish
+            <select v-model.number="ledgerPageSize" class="mx-2 rounded border px-2 py-1 text-sm dark:bg-slate-900">
+              <option :value="25">25</option>
+              <option :value="50">50</option>
+              <option :value="100">100</option>
+              <option :value="200">200</option>
+            </select>
+            qatordan
+          </div>
+          <div class="flex items-center gap-2">
+            <BaseButton :disabled="ledger?.pagination?.page <= 1 || loading" color="info" outline label="Oldingi" @click="ledgerPage = Math.max(1, (ledger?.pagination?.page || 1) - 1)" />
+            <span class="text-slate-600 dark:text-slate-300">{{ ledger?.pagination?.page || 1 }} / {{ ledger?.pagination?.totalPages || 1 }}</span>
+            <BaseButton :disabled="loading || (ledger?.pagination?.page || 1) >= (ledger?.pagination?.totalPages || 1)" color="info" outline label="Keyingi" @click="ledgerPage = (ledger?.pagination?.page || 1) + 1" />
+          </div>
         </div>
       </CardBox>
 
@@ -424,9 +457,9 @@ function exportLedger() {
           <span>Shartnoma yig'indisi (oylik ijara)</span>
           <span class="text-xs text-slate-500 dark:text-slate-300">{{ contracts.length }} ta shartnoma</span>
         </div>
-        <div class="overflow-x-auto">
+        <div class="overflow-x-auto" style="max-height: 60vh">
           <table class="w-full table-auto text-sm">
-            <thead>
+            <thead style="position: sticky; top: 0; z-index: 1" class="bg-slate-50 dark:bg-slate-800">
               <tr class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                 <th class="px-4 py-2">Shartnoma</th>
                 <th class="px-4 py-2">Do'kon</th>
@@ -446,7 +479,7 @@ function exportLedger() {
                 <td colspan="8" class="px-4 py-3 text-center text-slate-500 dark:text-slate-300">Ma'lumot yo'q</td>
               </tr>
               <tr
-                v-for="c in contracts.slice(0, visibleContracts)"
+                v-for="c in contractsPaged"
                 :key="c.contractId"
                 class="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/70"
               >
@@ -480,8 +513,22 @@ function exportLedger() {
             </tbody>
           </table>
         </div>
-        <div v-if="contracts.length > visibleContracts" class="p-4 text-center">
-          <BaseButton color="info" outline label="Ko'proq ko'rish" @click="visibleContracts += 50" />
+        <div class="flex items-center justify-between gap-3 p-4 text-sm">
+          <div class="text-slate-600 dark:text-slate-300">
+            Ko'rsatish
+            <select v-model.number="contractsPageSize" class="mx-2 rounded border px-2 py-1 text-sm dark:bg-slate-900">
+              <option :value="25">25</option>
+              <option :value="50">50</option>
+              <option :value="100">100</option>
+              <option :value="200">200</option>
+            </select>
+            qatordan
+          </div>
+          <div class="flex items-center gap-2">
+            <BaseButton :disabled="contractsPage <= 1" color="info" outline label="Oldingi" @click="contractsPage = Math.max(1, contractsPage - 1)" />
+            <span class="text-slate-600 dark:text-slate-300">{{ contractsPage }} / {{ contractsTotalPages }}</span>
+            <BaseButton :disabled="contractsPage >= contractsTotalPages" color="info" outline label="Keyingi" @click="contractsPage = contractsPage + 1" />
+          </div>
         </div>
       </CardBox>
 
