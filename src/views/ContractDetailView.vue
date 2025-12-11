@@ -155,6 +155,12 @@ function outstandingLabel() {
   return "To'lov kutilmoqda"
 }
 
+function paymentTypeLabel() {
+  const type = (contract.value?.paymentType || '').toUpperCase()
+  if (type === 'BANK_ONLY') return "Bank o'tkazma"
+  return 'Onlayn'
+}
+
 async function loadContract() {
   if (!contractId.value) return
   loading.value = true
@@ -250,6 +256,10 @@ onMounted(async () => {
           <div>
             <p class="text-sm text-gray-500">Oylik to'lov</p>
             <p class="font-medium">{{ formatCurrency(contract.shopMonthlyFee) }}</p>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">To'lov turi</p>
+            <p class="font-medium">{{ paymentTypeLabel() }}</p>
           </div>
           <div>
             <p class="text-sm text-gray-500">Holati</p>

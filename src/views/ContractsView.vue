@@ -55,6 +55,7 @@ const limit = ref(10)
 const total = ref(0)
 const statusFilter = ref('active')
 const paidFilter = ref('all')
+const paymentTypeFilter = ref('all')
 
 const owners = ref([])
 const stores = ref([])
@@ -125,6 +126,7 @@ const form = ref({
   issueDate: '',
   expiryDate: '',
   isActive: true,
+  paymentType: 'ONLINE',
 })
 
 // Computed
@@ -187,12 +189,14 @@ function resolveStore(contract) {
 }
 
 function getPaymentUrl(contract) {
+  if (isBankOnly(contract)) return ''
   const store = resolveStore(contract)
   if (!store) return ''
   return store.payme_payment_url || store.click_payment_url || ''
 }
 
 function getPaymentLinks(contract) {
+  if (isBankOnly(contract)) return []
   const store = resolveStore(contract)
   if (!store) return []
   if (store.payme_payment_url)
@@ -235,6 +239,12 @@ function isContractExpired(contract) {
   const today = startOfTashkentDay() || new Date()
   return exp < today
 }
+function isBankOnly(contract) {
+  return (contract?.paymentType || '').toUpperCase() === 'BANK_ONLY'
+}
+function paymentTypeLabel(contract) {
+  return isBankOnly(contract) ? "Bank o'tkazma" : 'Onlayn'
+}
 // Derive last paid and next due dates (fallbacks when snapshot not present)
 function getLastPaidDate(contract) {
   if (contract?.paymentSnapshot?.paidThrough) return contract.paymentSnapshot.paidThrough
@@ -252,13 +262,14 @@ function getLastPaidDate(contract) {
 function contractActions(contract) {
   const paid = contractPaidThisMonth(contract)
   const paymentUrlAvailable = Boolean(getPaymentUrl(contract))
+  const bankOnly = isBankOnly(contract)
   const items = [
     { label: 'Batafsil', icon: mdiOpenInNew, onClick: () => goToContractDetail(contract) },
     {
       label: "Onlayn to'lov",
       icon: mdiCreditCardOutline,
-      hint: paid ? "Joriy oy to'langan" : '',
-      disabled: !paymentUrlAvailable || !contract.isActive || paid,
+      hint: bankOnly ? 'Faqat bank orqali' : paid ? "Joriy oy to'langan" : '',
+      disabled: bankOnly || !paymentUrlAvailable || !contract.isActive || paid,
       onClick: () => handleContractPayment(contract),
     },
     {
@@ -383,7 +394,9 @@ async function fetchData() {
   try {
     const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
     const paid = paidFilter.value === 'all' ? undefined : paidFilter.value
-    const res = await listContracts({ page: page.value, limit: limit.value, isActive, paid })
+    const paymentType =
+      paymentTypeFilter.value === 'all' ? undefined : paymentTypeFilter.value.toUpperCase()
+    const res = await listContracts({ page: page.value, limit: limit.value, isActive, paid, paymentType })
     items.value = res.data
     total.value = res.pagination?.total ?? items.value.length
   } catch (e) {
@@ -407,10 +420,12 @@ async function runSearch() {
     const maxPages = 20
     const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
     const paid = paidFilter.value === 'all' ? undefined : paidFilter.value
+    const paymentType =
+      paymentTypeFilter.value === 'all' ? undefined : paymentTypeFilter.value.toUpperCase()
     let pageCursor = 1
     let totalAvailable = Infinity
     while (pageCursor <= maxPages) {
-      const res = await listContracts({ page: pageCursor, limit: chunkSize, isActive, paid })
+      const res = await listContracts({ page: pageCursor, limit: chunkSize, isActive, paid, paymentType })
       const data = res.data || []
       matches.push(...data)
       const reportedTotal = res.pagination?.total ?? res.total ?? null
@@ -467,6 +482,7 @@ function openCreate() {
     issueDate: '',
     expiryDate: '',
     isActive: true,
+    paymentType: 'ONLINE',
   }
   showForm.value = true
 }
@@ -485,6 +501,7 @@ function openEdit(it) {
     issueDate: formatTashkentDateISO(it.issueDate) || '',
     expiryDate: formatTashkentDateISO(it.expiryDate) || '',
     isActive: typeof it.isActive === 'boolean' ? it.isActive : true,
+    paymentType: (it.paymentType || 'ONLINE').toUpperCase(),
   }
   showForm.value = true
 }
@@ -521,6 +538,7 @@ async function submitForm() {
       issueDate: form.value.issueDate || undefined,
       expiryDate: form.value.expiryDate || undefined,
       isActive: form.value.isActive,
+      paymentType: form.value.paymentType || undefined,
     }
     if (!payload.ownerId || !payload.storeId) throw new Error("Ega va Do'kon majburiy")
     if (editingId.value) await updateContract(editingId.value, payload)
@@ -686,6 +704,7 @@ async function exportContractsXLSX() {
       'Berilgan',
       'Tugash',
       'Faol',
+      "To'lov turi",
       'Tranzaksiya soni',
       "Oxirgi to'lov sana",
       'Jami tolangan',
@@ -693,8 +712,10 @@ async function exportContractsXLSX() {
     const rows = []
     let p = 1
     const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
+    const paymentType =
+      paymentTypeFilter.value === 'all' ? undefined : paymentTypeFilter.value.toUpperCase()
     while (true) {
-      const res = await listContracts({ page: p, limit: 100, isActive })
+      const res = await listContracts({ page: p, limit: 100, isActive, paymentType })
       const arr = res.data || []
       for (const c of arr) {
         const tx = c.transactions || []
@@ -716,6 +737,7 @@ async function exportContractsXLSX() {
           formatTashkentDateISO(c.issueDate) || '',
           formatTashkentDateISO(c.expiryDate) || '',
           c.isActive ? 'Ha' : "Yo'q",
+          paymentTypeLabel(c),
           tx.length,
           last ? formatTashkentDateISO(last.createdAt) : '',
           totalPaid,
@@ -733,12 +755,14 @@ async function exportContractsXLSX() {
 async function exportContractTransactionsXLSX() {
   loading.value = true
   try {
-    const headers = ['ContractID', 'Ega', "Do'kon", 'Sana', 'Summasi', 'Holat']
+    const headers = ['ContractID', 'Ega', "Do'kon", "To'lov turi", 'Sana', 'Summasi', 'Holat']
     const rows = []
     let p = 1
     const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
+    const paymentType =
+      paymentTypeFilter.value === 'all' ? undefined : paymentTypeFilter.value.toUpperCase()
     while (true) {
-      const res = await listContracts({ page: p, limit: 100, isActive })
+      const res = await listContracts({ page: p, limit: 100, isActive, paymentType })
       const arr = res.data || []
       for (const c of arr) {
         for (const t of c.transactions || []) {
@@ -746,6 +770,7 @@ async function exportContractTransactionsXLSX() {
             c.id,
             c.owner?.fullName || c.ownerId,
             c.store?.storeNumber || c.storeId,
+            paymentTypeLabel(c),
             formatTashkentDateISO(t.createdAt) || '',
             t.amount ?? '',
             t.status,
@@ -847,6 +872,12 @@ watch(paidFilter, async () => {
 })
 
 watch(statusFilter, async () => {
+  page.value = 1
+  if (searchActive.value) await runSearch()
+  else await fetchData()
+})
+
+watch(paymentTypeFilter, async () => {
   page.value = 1
   if (searchActive.value) await runSearch()
   else await fetchData()
@@ -960,6 +991,16 @@ function isStoreOccupied(s) {
                 <option value="unpaid">To'lanmagan</option>
               </select>
             </FormField>
+            <FormField label="To'lov turi">
+              <select
+                v-model="paymentTypeFilter"
+                class="rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100"
+              >
+                <option value="all">Barchasi</option>
+                <option value="ONLINE">Onlayn</option>
+                <option value="BANK_ONLY">Bank o'tkazma</option>
+              </select>
+            </FormField>
             <FormField class="w-full md:max-w-2xl" label="Qidirish (kamida 2 belgi)">
               <div class="space-y-1">
                 <FormControl v-model="searchTerm" placeholder="Ega, do'kon, guvohnoma yoki STIR" />
@@ -1045,6 +1086,14 @@ function isStoreOccupied(s) {
                         stores.find((s) => s.id === it.storeId)?.description ||
                         "Izoh yo'q"
                       }}
+                    </div>
+                    <div
+                      class="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                      :class="isBankOnly(it)
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-200'
+                        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'"
+                    >
+                      {{ paymentTypeLabel(it) }}
                     </div>
                   </td>
                   <td class="px-4 py-2 align-top font-semibold">
@@ -1418,6 +1467,15 @@ function isStoreOccupied(s) {
           </FormField>
           <FormField label="Tugash sanasi">
             <FormControl v-model="form.expiryDate" type="date" />
+          </FormField>
+          <FormField label="To'lov turi">
+            <select
+              v-model="form.paymentType"
+              class="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+            >
+              <option value="ONLINE">Onlayn</option>
+              <option value="BANK_ONLY">Bank o'tkazma</option>
+            </select>
           </FormField>
           <FormField label="Faol">
             <input type="checkbox" v-model="form.isActive" class="h-5 w-5" />
