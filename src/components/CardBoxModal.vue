@@ -35,6 +35,10 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  cardClass: {
+    type: String,
+    default: '',
+  },
 })
 
 const emit = defineEmits(['update:modelValue', 'cancel', 'confirm'])
@@ -73,6 +77,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEscape))
   <OverlayLayer v-if="value" @overlay-click="cancel">
     <CardBox
       class="z-50 max-h-[calc(100dvh-(--spacing(40)))] w-11/12 animate-fade-in shadow-lg md:w-3/5 lg:w-2/5 xl:w-4/12"
+      :class="cardClass"
       is-modal
       has-component-layout
     >

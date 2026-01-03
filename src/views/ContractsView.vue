@@ -1,6 +1,5 @@
 ﻿<script setup>
 import { ref, onMounted, computed, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import {
   mdiRefresh,
   mdiQrcode,
@@ -44,14 +43,12 @@ import {
   startOfTashkentDay,
 } from '@/utils/time'
 
-const router = useRouter()
-
 // State
 const items = ref([])
 const loading = ref(false)
 const errorMsg = ref('')
 const page = ref(1)
-const limit = ref(10)
+const limit = ref(200)
 const total = ref(0)
 const statusFilter = ref('active')
 const paidFilter = ref('all')
@@ -101,6 +98,11 @@ const paymentConfirmModal = ref({
   contract: null,
   url: '',
   provider: '',
+})
+
+const contractDetailModal = ref({
+  open: false,
+  contract: null,
 })
 
 const manualPaymentModal = ref({
@@ -272,7 +274,7 @@ function contractActions(contract) {
   const paymentUrlAvailable = Boolean(getPaymentUrl(contract))
   const bankOnly = isBankOnly(contract)
   const items = [
-    { label: 'Batafsil', icon: mdiOpenInNew, onClick: () => goToContractDetail(contract) },
+    { label: 'Batafsil', icon: mdiOpenInNew, onClick: () => openContractDetail(contract) },
     {
       label: "Onlayn to'lov",
       icon: mdiCreditCardOutline,
@@ -340,10 +342,10 @@ function statusBadge(contract) {
   return contractPaidThisMonth(contract) ? "Faol (to'langan)" : 'Faol'
 }
 
-// Navigation
-function goToContractDetail(contract) {
+function openContractDetail(contract) {
   if (!contract?.id) return
-  router.push({ name: 'contract-detail', params: { id: contract.id } })
+  contractDetailModal.value.contract = contract
+  contractDetailModal.value.open = true
 }
 
 // Payment flow
@@ -775,44 +777,6 @@ async function exportContractsXLSX() {
   }
 }
 
-async function exportContractTransactionsXLSX() {
-  loading.value = true
-  try {
-    const headers = ['ContractID', 'Ega', "Do'kon", "To'lov turi", 'Sana', 'Summasi', 'Holat']
-    const rows = []
-    let p = 1
-    const isActive = statusFilter.value === 'all' ? undefined : statusFilter.value === 'active'
-    const paymentType =
-      paymentTypeFilter.value === 'all' ? undefined : paymentTypeFilter.value.toUpperCase()
-    while (true) {
-      const res = await listContracts({ page: p, limit: 100, isActive, paymentType })
-      const arr = res.data || []
-      for (const c of arr) {
-        for (const t of c.transactions || []) {
-          rows.push([
-            c.id,
-            c.owner?.fullName || c.ownerId,
-            c.store?.storeNumber || c.storeId,
-            paymentTypeLabel(c),
-            formatTashkentDateISO(t.createdAt) || '',
-            t.amount ?? '',
-            t.status,
-          ])
-        }
-      }
-      if (arr.length < 100) break
-      p++
-    }
-    downloadXLSX(
-      `contract_transactions_${getTashkentTodayISO()}.xlsx`,
-      headers,
-      rows,
-      'Transactions',
-    )
-  } finally {
-    loading.value = false
-  }
-}
 function downloadContractHistory() {
   const items = contractHistoryModal.value.items || []
   if (!items.length) return
@@ -1035,13 +999,6 @@ function isStoreOccupied(s) {
               label="XLSX (Shartnomalar)"
               @click="exportContractsXLSX"
             />
-            <BaseButton
-              color="info"
-              outline
-              :disabled="loading"
-              label="XLSX (Tranzaksiyalar)"
-              @click="exportContractTransactionsXLSX"
-            />
           </div>
           <div class="flex items-center justify-end">
             <BaseButton color="success" :disabled="loading" label="Yaratish" @click="openCreate" />
@@ -1049,7 +1006,7 @@ function isStoreOccupied(s) {
         </div>
       </CardBox>
       <CardBox has-table>
-        <div class="overflow-x-auto">
+        <div class="max-h-[70vh] overflow-auto">
           <table class="w-full table-auto">
             <thead>
               <tr>
@@ -1156,6 +1113,7 @@ function isStoreOccupied(s) {
           :page="page"
           :limit="limit"
           :total="displayTotal"
+          :limit-options="[200, 300, 500]"
           :disabled="loading"
           @update:page="handlePageChange"
           @update:limit="handleLimitChange"
@@ -1167,6 +1125,169 @@ function isStoreOccupied(s) {
           Qidiruv natijalari ko'rsatilmoqda ({{ displayTotal }})
         </div>
       </CardBox>
+      <CardBoxModal
+        v-model="contractDetailModal.open"
+        button="info"
+        button-label="Yopish"
+        :confirm-disabled="false"
+        :has-cancel="false"
+        title="Shartnoma tafsilotlari"
+        card-class="md:w-5/6 lg:w-4/5 xl:w-3/4"
+      >
+        <template v-if="!contractDetailModal.contract">
+          <div class="text-sm text-gray-500">Ma'lumot topilmadi</div>
+        </template>
+        <template v-else>
+          <div class="space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div class="text-sm text-gray-500">Shartnoma #{{ contractDetailModal.contract.id }}</div>
+                <div class="text-xl font-semibold">
+                  {{
+                    contractDetailModal.contract.owner?.fullName ||
+                    owners.find((o) => o.id === contractDetailModal.contract.ownerId)?.fullName ||
+                    contractDetailModal.contract.ownerId
+                  }}
+                </div>
+                <div class="text-xs text-gray-500">
+                  {{
+                    contractDetailModal.contract.owner?.tin ||
+                    owners.find((o) => o.id === contractDetailModal.contract.ownerId)?.tin ||
+                    "TIN yo'q"
+                  }}
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="text-xs text-gray-500">Holat</div>
+                <div
+                  class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold"
+                  :class="contractPaidThisMonth(contractDetailModal.contract)
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'
+                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200'"
+                >
+                  {{ statusBadge(contractDetailModal.contract) }}
+                </div>
+                <div class="text-xs text-gray-500">{{ outstandingLabel(contractDetailModal.contract) }}</div>
+              </div>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                <div class="text-xs font-semibold uppercase text-slate-500 dark:text-slate-300">Do'kon</div>
+                <div class="mt-1 text-base font-semibold">
+                  {{
+                    contractDetailModal.contract.store?.storeNumber ||
+                    stores.find((s) => s.id === contractDetailModal.contract.storeId)?.storeNumber ||
+                    contractDetailModal.contract.storeId
+                  }}
+                </div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">
+                  {{
+                    contractDetailModal.contract.store?.description ||
+                    stores.find((s) => s.id === contractDetailModal.contract.storeId)?.description ||
+                    "Izoh yo'q"
+                  }}
+                </div>
+                <div class="mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                  :class="isBankOnly(contractDetailModal.contract)
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-200'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'"
+                >
+                  {{ paymentTypeLabel(contractDetailModal.contract) }}
+                </div>
+                <div
+                  v-if="isContractExpired(contractDetailModal.contract)"
+                  class="mt-2 inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-200"
+                >
+                  Muddat tugagan
+                </div>
+              </div>
+              <div class="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                <div class="text-xs font-semibold uppercase text-slate-500 dark:text-slate-300">To'lov</div>
+                <div class="mt-2 grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400">Oylik</div>
+                    <div class="font-semibold">{{ formatCurrency(contractDetailModal.contract.shopMonthlyFee) }}</div>
+                  </div>
+                  <div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400">Oxirgi to'lov</div>
+                    <div class="font-semibold">{{ formatTashkentDate(getLastPaidDate(contractDetailModal.contract)) || '-' }}</div>
+                  </div>
+                  <div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400">Navbatdagi</div>
+                    <div class="font-semibold">{{ formatTashkentDate(getNextDueDate(contractDetailModal.contract)) || '-' }}</div>
+                  </div>
+                  <div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400">To'lov turi</div>
+                    <div class="font-semibold">{{ paymentTypeLabel(contractDetailModal.contract) }}</div>
+                  </div>
+                </div>
+                <div v-if="getPaymentLinks(contractDetailModal.contract).length" class="mt-3 flex flex-wrap gap-2">
+                  <BaseButton
+                    v-for="link in getPaymentLinks(contractDetailModal.contract)"
+                    :key="link.type"
+                    small
+                    outline
+                    color="info"
+                    :label="`To'lov: ${link.label}`"
+                    @click="openPayment(link.url)"
+                  />
+                </div>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+              <div class="text-xs font-semibold uppercase text-slate-500 dark:text-slate-300">Shartnoma</div>
+              <div class="mt-2 grid gap-3 md:grid-cols-4">
+                <div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400">Berilgan</div>
+                  <div class="font-semibold">{{ formatTashkentDate(contractDetailModal.contract.issueDate) || '-' }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400">Tugash</div>
+                  <div class="font-semibold">{{ formatTashkentDate(contractDetailModal.contract.expiryDate) || '-' }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400">Guvohnoma</div>
+                  <div class="font-semibold">{{ contractDetailModal.contract.certificateNumber || '-' }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400">Faol</div>
+                  <div class="font-semibold">{{ contractDetailModal.contract.isActive ? 'Ha' : "Yo'q" }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+              <div class="text-xs font-semibold uppercase text-slate-500 dark:text-slate-300">Tranzaksiyalar</div>
+              <div v-if="!contractDetailModal.contract.transactions?.length" class="mt-2 text-sm text-slate-500">
+                Tranzaksiyalar topilmadi
+              </div>
+              <div v-else class="mt-2 max-h-72 overflow-auto">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr>
+                      <th class="px-2 py-1 text-left">Sana</th>
+                      <th class="px-2 py-1 text-left">Summasi</th>
+                      <th class="px-2 py-1 text-left">Holat</th>
+                      <th class="px-2 py-1 text-left">Manba</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="tx in contractDetailModal.contract.transactions" :key="tx.id">
+                      <td class="px-2 py-1">{{ formatTashkentDate(tx.createdAt) || '-' }}</td>
+                      <td class="px-2 py-1">{{ tx.amount ?? '-' }}</td>
+                      <td class="px-2 py-1">
+                        <span :class="tx.status === 'PAID' ? 'text-emerald-600' : 'text-amber-600'">
+                          {{ tx.status }}
+                        </span>
+                      </td>
+                      <td class="px-2 py-1">{{ tx.paymentMethod || tx.source || '-' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </template>
+      </CardBoxModal>
       <CardBoxModal
         v-model="paymentConfirmModal.open"
         has-cancel
