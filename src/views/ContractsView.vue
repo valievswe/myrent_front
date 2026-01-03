@@ -958,8 +958,8 @@ function isStoreOccupied(s) {
         {{ errorMsg }}
       </div>
       <CardBox class="mb-4">
-        <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div class="flex flex-wrap items-end gap-3">
+        <div class="flex flex-col gap-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex flex-wrap items-center gap-2 rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
               <button
                 v-for="tab in contractTabs"
@@ -974,6 +974,18 @@ function isStoreOccupied(s) {
                 {{ tab.label }}
               </button>
             </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <BaseButton
+                color="info"
+                outline
+                :disabled="loading"
+                label="XLSX (Shartnomalar)"
+                @click="exportContractsXLSX"
+              />
+              <BaseButton color="success" :disabled="loading" label="Yaratish" @click="openCreate" />
+            </div>
+          </div>
+          <div class="grid gap-3 md:grid-cols-[200px,1fr]">
             <FormField label="To'lov holati">
               <select
                 v-model="paidFilter"
@@ -984,7 +996,7 @@ function isStoreOccupied(s) {
                 <option value="unpaid">To'lanmagan</option>
               </select>
             </FormField>
-            <FormField class="w-full md:max-w-2xl" label="Qidirish (kamida 2 belgi)">
+            <FormField label="Qidirish (kamida 2 belgi)">
               <div class="space-y-1">
                 <FormControl v-model="searchTerm" placeholder="Ega, do'kon, guvohnoma yoki STIR" />
                 <div v-if="showShortSearchHint" class="text-xs text-gray-500">
@@ -992,16 +1004,6 @@ function isStoreOccupied(s) {
                 </div>
               </div>
             </FormField>
-            <BaseButton
-              color="info"
-              outline
-              :disabled="loading"
-              label="XLSX (Shartnomalar)"
-              @click="exportContractsXLSX"
-            />
-          </div>
-          <div class="flex items-center justify-end">
-            <BaseButton color="success" :disabled="loading" label="Yaratish" @click="openCreate" />
           </div>
         </div>
       </CardBox>
