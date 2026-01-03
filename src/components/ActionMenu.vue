@@ -1,6 +1,7 @@
 <template>
   <div ref="root" class="relative inline-block text-left">
     <button
+      ref="buttonRef"
       type="button"
       class="group inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-transparent transition hover:-translate-y-[1px] hover:border-slate-300 hover:bg-white hover:shadow-md focus-visible:ring-2 focus-visible:ring-blue-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800"
       :aria-label="buttonLabel"
@@ -21,44 +22,48 @@
       </span>
     </button>
 
-    <transition name="fade">
-      <div
-        v-if="open"
-        class="absolute right-0 z-30 mt-2 w-64 origin-top-right rounded-2xl border border-slate-200/80 bg-white/95 p-2 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"
-      >
-        <div class="space-y-1">
-          <button
-            v-for="(item, idx) in items"
-            :key="idx"
-            type="button"
-            :disabled="item.disabled"
-            class="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition hover:-translate-y-[1px] hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-slate-800"
-            :class="item.danger ? 'text-rose-600 dark:text-rose-300' : 'text-slate-700 dark:text-slate-200'"
-            @click.stop="handleClick(item)"
-          >
-            <span
-              v-if="item.icon"
-              class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              :class="item.danger ? 'border-rose-100 bg-rose-50 text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200' : 'border-blue-100 bg-blue-50 text-blue-600 dark:border-blue-900/30 dark:bg-blue-900/10 dark:text-blue-200'"
+    <Teleport to="body">
+      <transition name="fade">
+        <div
+          v-if="open"
+          ref="menuRef"
+          class="fixed z-[1000] mt-2 w-64 origin-top-right rounded-2xl border border-slate-200/80 bg-white/95 p-2 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"
+          :style="menuStyle"
+        >
+          <div class="max-h-[70vh] space-y-1 overflow-auto">
+            <button
+              v-for="(item, idx) in items"
+              :key="idx"
+              type="button"
+              :disabled="item.disabled"
+              class="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition hover:-translate-y-[1px] hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-slate-800"
+              :class="item.danger ? 'text-rose-600 dark:text-rose-300' : 'text-slate-700 dark:text-slate-200'"
+              @click.stop="handleClick(item)"
             >
-              <svg v-if="typeof item.icon === 'string'" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                <path :d="item.icon" />
-              </svg>
-              <component v-else :is="item.icon" class="h-4 w-4" />
-            </span>
-            <div class="flex flex-col">
-              <span>{{ item.label }}</span>
-              <span v-if="item.hint" class="text-xs text-slate-500 dark:text-slate-400">{{ item.hint }}</span>
-            </div>
-          </button>
+              <span
+                v-if="item.icon"
+                class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                :class="item.danger ? 'border-rose-100 bg-rose-50 text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200' : 'border-blue-100 bg-blue-50 text-blue-600 dark:border-blue-900/30 dark:bg-blue-900/10 dark:text-blue-200'"
+              >
+                <svg v-if="typeof item.icon === 'string'" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path :d="item.icon" />
+                </svg>
+                <component v-else :is="item.icon" class="h-4 w-4" />
+              </span>
+              <div class="flex flex-col">
+                <span>{{ item.label }}</span>
+                <span v-if="item.hint" class="text-xs text-slate-500 dark:text-slate-400">{{ item.hint }}</span>
+              </div>
+            </button>
+          </div>
         </div>
-      </div>
-    </transition>
+      </transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, onBeforeUnmount } from 'vue'
+import { ref, onBeforeUnmount, watch, nextTick } from 'vue'
 
 const props = defineProps({
   items: {
@@ -73,6 +78,10 @@ const props = defineProps({
 const emit = defineEmits(['select'])
 const open = ref(false)
 const root = ref(null)
+const buttonRef = ref(null)
+const menuRef = ref(null)
+const menuStyle = ref({})
+let positionListenersActive = false
 
 function close() {
   open.value = false
@@ -89,14 +98,68 @@ function handleClick(item) {
 
 function handleOutside(event) {
   if (!root.value) return
-  if (!root.value.contains(event.target)) {
+  if (root.value.contains(event.target)) return
+  if (menuRef.value && menuRef.value.contains(event.target)) return
+  {
     close()
   }
 }
 
+function updateMenuPosition() {
+  if (!buttonRef.value || !menuRef.value) return
+  const rect = buttonRef.value.getBoundingClientRect()
+  const menuRect = menuRef.value.getBoundingClientRect()
+  const viewportW = window.innerWidth
+  const viewportH = window.innerHeight
+  const padding = 8
+
+  let left = rect.right - menuRect.width
+  if (left < padding) left = padding
+  if (left + menuRect.width > viewportW - padding) {
+    left = Math.max(padding, viewportW - menuRect.width - padding)
+  }
+
+  let top = rect.bottom + padding
+  const openUpward = top + menuRect.height > viewportH - padding
+  if (openUpward) {
+    top = Math.max(padding, rect.top - menuRect.height - padding)
+  }
+
+  menuStyle.value = {
+    left: `${left}px`,
+    top: `${top}px`,
+    transformOrigin: openUpward ? 'bottom right' : 'top right',
+  }
+}
+
+function addPositionListeners() {
+  if (positionListenersActive) return
+  positionListenersActive = true
+  window.addEventListener('scroll', updateMenuPosition, true)
+  window.addEventListener('resize', updateMenuPosition)
+}
+
+function removePositionListeners() {
+  if (!positionListenersActive) return
+  positionListenersActive = false
+  window.removeEventListener('scroll', updateMenuPosition, true)
+  window.removeEventListener('resize', updateMenuPosition)
+}
+
+watch(open, async (isOpen) => {
+  if (!isOpen) {
+    removePositionListeners()
+    return
+  }
+  await nextTick()
+  updateMenuPosition()
+  addPositionListeners()
+})
+
 document.addEventListener('click', handleOutside)
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleOutside)
+  removePositionListeners()
 })
 </script>
 

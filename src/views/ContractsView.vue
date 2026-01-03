@@ -55,7 +55,15 @@ const limit = ref(10)
 const total = ref(0)
 const statusFilter = ref('active')
 const paidFilter = ref('all')
-const paymentTypeFilter = ref('all')
+const paymentTypeFilter = ref('ONLINE')
+const activeTab = ref('online')
+const bulkFilterUpdate = ref(false)
+
+const contractTabs = [
+  { key: 'online', label: 'Onlayn', status: 'active', paymentType: 'ONLINE' },
+  { key: 'bank', label: "Bank o'tkazma", status: 'active', paymentType: 'BANK_ONLY' },
+  { key: 'archive', label: 'Arxiv', status: 'archived', paymentType: 'all' },
+]
 
 const owners = ref([])
 const stores = ref([])
@@ -404,6 +412,21 @@ async function fetchData() {
   } finally {
     loading.value = false
   }
+}
+
+function applyTab(tabKey) {
+  const tab = contractTabs.find((t) => t.key === tabKey)
+  if (!tab) return
+  activeTab.value = tabKey
+  bulkFilterUpdate.value = true
+  statusFilter.value = tab.status
+  paymentTypeFilter.value = tab.paymentType
+  Promise.resolve().then(() => {
+    bulkFilterUpdate.value = false
+  })
+  page.value = 1
+  if (searchActive.value) runSearch()
+  else fetchData()
 }
 
 async function runSearch() {
@@ -872,12 +895,14 @@ watch(paidFilter, async () => {
 })
 
 watch(statusFilter, async () => {
+  if (bulkFilterUpdate.value) return
   page.value = 1
   if (searchActive.value) await runSearch()
   else await fetchData()
 })
 
 watch(paymentTypeFilter, async () => {
+  if (bulkFilterUpdate.value) return
   page.value = 1
   if (searchActive.value) await runSearch()
   else await fetchData()
@@ -971,16 +996,20 @@ function isStoreOccupied(s) {
       <CardBox class="mb-4">
         <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div class="flex flex-wrap items-end gap-3">
-            <FormField label="Holati">
-              <select
-                v-model="statusFilter"
-                class="rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100"
+            <div class="flex flex-wrap items-center gap-2 rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+              <button
+                v-for="tab in contractTabs"
+                :key="tab.key"
+                type="button"
+                class="rounded-full px-4 py-2 transition"
+                :class="activeTab === tab.key
+                  ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-white'"
+                @click="applyTab(tab.key)"
               >
-                <option value="active">Faol</option>
-                <option value="archived">Arxivlangan</option>
-                <option value="all">Barchasi</option>
-              </select>
-            </FormField>
+                {{ tab.label }}
+              </button>
+            </div>
             <FormField label="To'lov holati">
               <select
                 v-model="paidFilter"
@@ -989,16 +1018,6 @@ function isStoreOccupied(s) {
                 <option value="all">Barchasi</option>
                 <option value="paid">To'langan</option>
                 <option value="unpaid">To'lanmagan</option>
-              </select>
-            </FormField>
-            <FormField label="To'lov turi">
-              <select
-                v-model="paymentTypeFilter"
-                class="rounded border px-2 py-1 text-sm dark:bg-gray-900 dark:text-gray-100"
-              >
-                <option value="all">Barchasi</option>
-                <option value="ONLINE">Onlayn</option>
-                <option value="BANK_ONLY">Bank o'tkazma</option>
               </select>
             </FormField>
             <FormField class="w-full md:max-w-2xl" label="Qidirish (kamida 2 belgi)">
