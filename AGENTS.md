@@ -20,9 +20,11 @@ This file is the working guide for future chats. It summarizes the frontend stru
 - Separate client: `src/services/publicPayment.js` (no auth, `withCredentials: false`).
 - Base URL: `VITE_PUBLIC_API_URL` or `VITE_API_URL` or `${window.location.origin}/api`.
 - Prefix: `VITE_PUBLIC_PAY_PREFIX` or `/public/pay`.
+- Public search can use `fields=min` to return minimal list payloads for faster auto-search.
 
 ### Routing Rules
 - Public routes (no token required): `/pay`, `/pay/confirmation`, `/login` (see `route.meta.public`).
+- Public detail page: `/pay/details` (no token required).
 - All other routes require `access_token`; guard in `src/main.js` redirects to `/login` if missing.
 - If adding a new public page, set `meta.public = true` in `src/router/index.js`.
 
@@ -105,8 +107,9 @@ Backend summary is provided by the user; key points below for frontend alignment
 - `/reconciliation` (`src/views/ReconciliationView.vue`): `getLedger`, `getMonthlyRollup`, `getContractsMonthlyStatus`; XLSX export via `xlsx`.
 - `/map` (`src/views/MapView.vue`): loads sections/stores/stalls/contracts; `listAttendances` by day; create/delete attendance; update stall; payment URL on attendance; filters persisted in `localStorage`.
 - `/users` (`src/views/UsersView.vue`): `listUsers` with search/role filters; create/update/delete users.
-- `/pay` (`src/views/PublicPayView.vue`): public search for contracts or stalls; `searchPublicContracts`, `getPublicStall`, `initiatePublicContractPayment`.
-- `/pay/confirmation` (`src/views/PublicPayConfirmationView.vue`): reads `contractId` or `stall` from query and fetches `getPublicContract`/`getPublicStall`.
+- `/pay` (`src/views/PublicPayView.vue`): public auto-search for contracts or stalls; uses `fields=min` for list results; routes to detail page.
+- `/pay/details` (`src/views/PublicPayDetailView.vue`): reads `contractId` or `stall` from query, fetches `getPublicContract`/`getPublicStall`, and initiates payment.
+- `/pay/confirmation` (`src/views/PublicPayConfirmationView.vue`): reads `contractId` or `stall` from query and fetches `getPublicContract`/`getPublicStall` for status-only confirmation.
 
 ## API Mapping (Frontend Service Contracts)
 Request/response shapes below reflect current usage in `src/services` and the views.
@@ -198,10 +201,10 @@ Request/response shapes below reflect current usage in `src/services` and the vi
 - `GET /statistics/reconciliation/stalls/monthly-status` params `{ ... }` -> `{ rows, totals }`
 
 ### Public Payments (`src/services/publicPayment.js`)
-- `GET /public/pay/contracts` params `{ storeNumber?, tin? }` -> list of contract entries (normalized in `utils/publicPayments`).
+- `GET /public/pay/contracts` params `{ storeNumber?, tin?, fields? }` -> list of contract entries (normalized in `utils/publicPayments`); `fields=min` returns minimal list items.
 - `GET /public/pay/contracts/:id` -> contract entry detail.
 - `POST /public/pay/contracts/:id/pay` -> `{ paymentUrl|url|click_payment_url }`
-- `GET /public/pay/stalls/:id` params `{ date? }` -> stall attendance/payment payload (normalized in `utils/publicPayments`).
+- `GET /public/pay/stalls/:id` params `{ date?, fields? }` -> stall attendance/payment payload (normalized in `utils/publicPayments`); `fields=min` returns minimal list items.
 
 ## Data Shapes Used in UI
 The UI relies on these fields (non-exhaustive) when rendering:

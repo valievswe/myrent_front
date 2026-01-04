@@ -4,6 +4,7 @@ function toArray(payload) {
   if (Array.isArray(payload)) return payload
   if (payload && Array.isArray(payload.data)) return payload.data
   if (payload && Array.isArray(payload.contracts)) return payload.contracts
+  if (payload && typeof payload === 'object') return [payload]
   return []
 }
 
