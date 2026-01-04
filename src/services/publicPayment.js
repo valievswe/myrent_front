@@ -15,10 +15,11 @@ function buildPath(path = '') {
   return `${PUBLIC_BASE_PATH}${normalized}`
 }
 
-export async function searchPublicContracts({ storeNumber, tin } = {}) {
+export async function searchPublicContracts({ storeNumber, tin, fields } = {}) {
   const params = {}
   if (storeNumber) params.storeNumber = storeNumber
   if (tin) params.tin = tin
+  if (fields) params.fields = fields
   const { data } = await publicHttp.get(buildPath('/contracts'), { params })
   return data
 }
@@ -35,10 +36,11 @@ export async function initiatePublicContractPayment(contractId) {
   return data
 }
 
-export async function getPublicStall(stallIdentifier, { date } = {}) {
+export async function getPublicStall(stallIdentifier, { date, fields } = {}) {
   if (!stallIdentifier) throw new Error('stall identifier is required')
   const params = {}
   if (date) params.date = date
+  if (fields) params.fields = fields
   const encodedId = encodeURIComponent(stallIdentifier)
   const { data } = await publicHttp.get(buildPath(`/stalls/${encodedId}`), { params })
   return data

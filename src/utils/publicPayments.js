@@ -16,14 +16,24 @@ function coerceNumber(value) {
 export function normalizeContracts(payload) {
   return toArray(payload).map((item) => {
     const contract = item.contract || item
-    const owner = item.owner || contract.owner || null
-    const store = item.store || contract.store || null
+    const ownerName = item.ownerName || item.owner_full_name || null
+    const storeNumber = item.storeNumber || item.store_number || null
+    const owner =
+      item.owner ||
+      contract.owner ||
+      (ownerName ? { fullName: ownerName } : null)
+    const store =
+      item.store ||
+      contract.store ||
+      (storeNumber ? { storeNumber } : null)
     const payment = item.payment || contract.payment || {}
 
     const amountCandidate =
       payment.amountDue ??
-      payment.amount ??
       item.amountDue ??
+      item.amount_due ??
+      payment.amount ??
+      item.amount ??
       item.amount ??
       contract.amountDue ??
       contract.shopMonthlyFee
@@ -35,13 +45,32 @@ export function normalizeContracts(payload) {
       store,
       payment: {
         amountDue: coerceNumber(amountCandidate),
-        currency: payment.currency || item.currency || (amountCandidate ? 'UZS' : null),
+        currency:
+          payment.currency ||
+          item.currency ||
+          item.currencyCode ||
+          (amountCandidate ? 'UZS' : null),
         dueDate: payment.dueDate || item.dueDate || contract.dueDate || null,
-        label: payment.label || item.periodLabel || payment.periodLabel || null,
+        label:
+          payment.label ||
+          item.periodLabel ||
+          item.period_label ||
+          payment.periodLabel ||
+          null,
         outstandingBalance:
           payment.outstandingBalance ?? item.outstandingBalance ?? contract.outstandingBalance ?? null,
-        status: payment.status || item.paymentStatus || contract.paymentStatus || null,
-        isPaid: payment.isPaid ?? item.isPaid ?? contract.isPaid ?? null,
+        status:
+          payment.status ||
+          item.paymentStatus ||
+          item.status ||
+          contract.paymentStatus ||
+          null,
+        isPaid:
+          payment.isPaid ??
+          item.isPaid ??
+          item.paid ??
+          contract.isPaid ??
+          null,
         paidAt:
           payment.paidAt ||
           payment.lastPaidAt ||
@@ -66,27 +95,45 @@ export function normalizeContracts(payload) {
 
 export function normalizeStallResults(payload, { fallbackDate } = {}) {
   return toArray(payload).map((entry) => {
-    const stall = entry.stall || entry
+    const stallNumber = entry.stallNumber || entry.stall_number || null
+    const stall = entry.stall || entry || {}
     const attendance = entry.attendance || stall.attendance || {}
     const payment = entry.payment || attendance.payment || {}
 
     const amountCandidate =
       payment.amountDue ??
+      entry.amountDue ??
+      entry.amount_due ??
       payment.amount ??
       attendance.amount ??
       stall.dailyFee ??
       stall.amount
 
     return {
-      id: stall.id || stall.stallId,
-      stall,
+      id: stall.id || stall.stallId || entry.stallId || stallNumber,
+      stall: stallNumber ? { ...stall, stallNumber } : stall,
       attendance,
       payment: {
         amountDue: coerceNumber(amountCandidate),
-        currency: payment.currency || (amountCandidate ? 'UZS' : null),
-        date: payment.date || attendance.date || stall.date || fallbackDate || null,
-        status: payment.status || attendance.status || (attendance ? 'UNPAID' : 'NO_ATTENDANCE'),
-        isPaid: payment.isPaid ?? attendance.isPaid ?? null,
+        currency: payment.currency || entry.currency || (amountCandidate ? 'UZS' : null),
+        date:
+          payment.date ||
+          entry.date ||
+          attendance.date ||
+          stall.date ||
+          fallbackDate ||
+          null,
+        status:
+          payment.status ||
+          entry.status ||
+          attendance.status ||
+          (attendance ? 'UNPAID' : 'NO_ATTENDANCE'),
+        isPaid:
+          payment.isPaid ??
+          entry.isPaid ??
+          entry.paid ??
+          attendance.isPaid ??
+          null,
         paidAt: payment.paidAt || attendance.paidAt || payment.updatedAt || null,
       },
       paymentUrl:

@@ -13,6 +13,12 @@ const routes = [
     component: () => import('@/views/PublicPayView.vue'),
   },
   {
+    meta: { title: "To'lov tafsilotlari", public: true },
+    path: '/pay/details',
+    name: 'public-pay-detail',
+    component: () => import('@/views/PublicPayDetailView.vue'),
+  },
+  {
     meta: { title: "To'lov tasdig'i", public: true },
     path: '/pay/confirmation',
     name: 'public-pay-confirmation',
