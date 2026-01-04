@@ -223,11 +223,13 @@ onUnmounted(() => {
 
 <template>
   <LayoutGuest>
-    <div class="min-h-screen bg-gradient-to-br from-slate-100 via-white to-slate-200 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 py-10 px-4">
-      <div class="mx-auto flex w-full max-w-4xl flex-col gap-6">
+    <div class="min-h-screen bg-gradient-to-br from-slate-100 via-white to-slate-200 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 px-3 py-6 sm:px-4 sm:py-10">
+      <div class="mx-auto flex w-full max-w-4xl flex-col gap-5 sm:gap-6">
         <div class="text-center">
-          <h1 class="text-3xl font-semibold text-slate-800 dark:text-slate-100">Ijara To'lovi</h1>
-          <p class="mt-2 text-2xl text-slate-900 dark:text-slate-200">Do'kon yoki rasta bo'yicha to'lov summasini tekshiring va to'lovni amalga oshiring.</p>
+          <h1 class="text-2xl font-semibold text-slate-800 dark:text-slate-100 sm:text-3xl">Ijara To'lovi</h1>
+          <p class="mt-2 text-base text-slate-900 dark:text-slate-200 sm:text-2xl">
+            Do'kon yoki rasta bo'yicha to'lov summasini tekshiring va to'lovni amalga oshiring.
+          </p>
         </div>
 
         <CardBox>
@@ -268,6 +270,7 @@ onUnmounted(() => {
                   color="info"
                   :label="storeLoading ? 'Qidirilmoqda...' : 'Shartnomani topish'"
                   :disabled="storeLoading"
+                  class="w-full sm:w-auto"
                 />
               </div>
             </form>
@@ -281,7 +284,7 @@ onUnmounted(() => {
             <div
               v-if="!storeLoading && storeResults.length"
               ref="resultsRef"
-              class="space-y-3"
+              class="space-y-2 sm:space-y-3"
             >
               <CardBox
                 v-for="entry in storeResults"
@@ -327,6 +330,7 @@ onUnmounted(() => {
                   color="info"
                   :label="stallLoading ? 'Hisoblanmoqda...' : 'To\'lovni ko\'rish'"
                   :disabled="stallLoading"
+                  class="w-full sm:w-auto"
                 />
               </div>
             </form>
@@ -340,7 +344,7 @@ onUnmounted(() => {
             <div
               v-if="!stallLoading && stallResults.length"
               ref="resultsRef"
-              class="space-y-3"
+              class="space-y-2 sm:space-y-3"
             >
               <CardBox
                 v-for="(entry, idx) in stallResults"

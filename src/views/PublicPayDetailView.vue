@@ -173,10 +173,10 @@ watch(
 
 <template>
   <LayoutGuest>
-    <div class="min-h-screen bg-gradient-to-br from-slate-100 via-white to-slate-200 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 py-10 px-4">
-      <div class="mx-auto flex w-full max-w-3xl flex-col gap-6">
+    <div class="min-h-screen bg-gradient-to-br from-slate-100 via-white to-slate-200 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 px-3 py-6 sm:px-4 sm:py-10">
+      <div class="mx-auto flex w-full max-w-3xl flex-col gap-5 sm:gap-6">
         <div class="text-center">
-          <h1 class="text-3xl font-semibold text-slate-800 dark:text-slate-100">To'lov tafsilotlari</h1>
+          <h1 class="text-2xl font-semibold text-slate-800 dark:text-slate-100 sm:text-3xl">To'lov tafsilotlari</h1>
           <p class="mt-2 text-slate-600 dark:text-slate-300">
             Barcha vaqtlar Toshkent (GMT+5) bo'yicha ko'rsatiladi.
           </p>
@@ -218,7 +218,7 @@ watch(
               </p>
             </div>
 
-            <div class="grid gap-4 md:grid-cols-2">
+            <div class="grid gap-3 sm:gap-4 md:grid-cols-2">
               <div class="rounded border border-slate-200 px-4 py-3 dark:border-slate-700">
                 <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Obyekt</div>
                 <div class="text-lg font-semibold text-slate-800 dark:text-slate-100">{{ entityLabel }}</div>
@@ -249,18 +249,19 @@ watch(
               {{ actionError }}
             </div>
 
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="flex items-center gap-3">
-                <BaseButton color="info" label="Bosh sahifaga qaytish" @click="goBack" />
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <BaseButton color="info" label="Bosh sahifaga qaytish" @click="goBack" class="w-full sm:w-auto" />
                 <BaseButton
                   v-if="!isPaid"
                   color="success"
                   :label="paymentBusy ? 'Havola tayyorlanmoqda...' : 'To\'lovni boshlash'"
                   :disabled="paymentBusy"
                   @click="mode === 'stall' ? openStallPayment() : openContractPayment()"
+                  class="w-full sm:w-auto"
                 />
               </div>
-              <p class="text-xs text-slate-500 dark:text-slate-400">
+              <p class="text-xs text-slate-500 dark:text-slate-400 sm:text-right">
                 Savollar uchun bozor ma'muriyatiga murojaat qiling.
               </p>
             </div>
