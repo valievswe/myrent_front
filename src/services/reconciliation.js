@@ -5,6 +5,16 @@ export async function getLedger(params = {}) {
   return data
 }
 
+export async function getLedgerTotals(params = {}) {
+  const { data } = await http.get('/statistics/reconciliation/ledger/totals', { params })
+  return data
+}
+
+export async function getLedgerExport(params = {}) {
+  const { data } = await http.get('/statistics/reconciliation/ledger/export', { params })
+  return data
+}
+
 export async function getContractSummary(params = {}) {
   const { data } = await http.get('/statistics/reconciliation/contracts', { params })
   return data

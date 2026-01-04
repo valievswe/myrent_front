@@ -6,17 +6,23 @@ import SectionTitle from '@/components/SectionTitle.vue'
 import CardBox from '@/components/CardBox.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import LineChart from '@/components/Charts/LineChart.vue'
-import { getLedger, getMonthlyRollup, getContractsMonthlyStatus } from '@/services/reconciliation'
+import {
+  getLedger,
+  getLedgerTotals,
+  getLedgerExport,
+  getMonthlyRollup,
+  getContractsMonthlyStatus,
+} from '@/services/reconciliation'
 import { formatTashkentDate, formatTashkentDateTime } from '@/utils/time'
 import * as XLSX from 'xlsx'
 
 const loading = ref(false)
 // Ledger includes server-side pagination meta when available
-const ledger = ref({ rows: [], from: null, to: null, pagination: { total: 0, page: 1, limit: 50, totalPages: 1 } })
+const ledger = ref({ rows: [], from: null, to: null, pagination: { total: 0, page: 1, limit: 200, totalPages: 1 } })
 const contracts = ref([])
 // Pagination state
 const ledgerPage = ref(1)
-const ledgerPageSize = ref(50)
+const ledgerPageSize = ref(200)
 const contractsPage = ref(1)
 const contractsPageSize = ref(50)
 const rollup = ref({ labels: [], series: [] })
@@ -79,15 +85,19 @@ function statusLabel(status) {
   return status || '-'
 }
 
-const ledgerTotals = computed(() => {
-  const totals = { all: 0, PAYME: 0, CLICK: 0, CASH: 0 }
-  for (const row of ledger.value.rows || []) {
-    const amt = Number(row.amount || 0)
-    totals.all += amt
-    if (row.method && totals[row.method] !== undefined) totals[row.method] += amt
+const ledgerTotals = ref({ all: 0, PAYME: 0, CLICK: 0, CASH: 0 })
+
+function buildLedgerParams() {
+  const { year, monthIndex } = parseMonthKey(selectedMonth.value)
+  const month = monthIndex + 1
+  return {
+    year,
+    month,
+    type: filterType.value,
+    method: filterMethod.value || undefined,
+    status: filterStatus.value === 'all' ? undefined : filterStatus.value,
   }
-  return totals
-})
+}
 
 // With monthly-status semantics, we do not compute overpaid here.
 const overpaidContracts = computed(() => [])
@@ -143,21 +153,19 @@ async function loadData() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const { year, monthIndex } = parseMonthKey(selectedMonth.value)
-    const month = monthIndex + 1
-    const params = {
-      month,
-      year,
-      type: filterType.value,
-      method: filterMethod.value || undefined,
-      status: filterStatus.value === 'all' ? undefined : filterStatus.value,
-    }
-    const [ledgerRes, monthlyStatus, rollupRes] = await Promise.all([
+    const params = buildLedgerParams()
+    const [ledgerRes, monthlyStatus, rollupRes, totalsRes] = await Promise.all([
       getLedger({ ...params, page: ledgerPage.value, limit: ledgerPageSize.value }),
-      getContractsMonthlyStatus({ year, month }),
-      getMonthlyRollup({ months: 12, type: filterType.value, method: filterMethod.value || undefined }),
+      getContractsMonthlyStatus({ year: params.year, month: params.month }),
+      getMonthlyRollup({
+        months: 12,
+        type: filterType.value,
+        method: filterMethod.value || undefined,
+      }),
+      getLedgerTotals(params),
     ])
-    ledger.value = ledgerRes || { rows: [], pagination: { total: 0, page: 1, limit: 50, totalPages: 1 } }
+    ledger.value = ledgerRes || { rows: [], pagination: { total: 0, page: 1, limit: 200, totalPages: 1 } }
+    ledgerTotals.value = totalsRes || { all: 0, PAYME: 0, CLICK: 0, CASH: 0 }
     // Transform monthly status into rows compatible with table
     const paidRows = (monthlyStatus?.paid || []).map((p) => ({
       contractId: p.contractId,
@@ -187,7 +195,8 @@ async function loadData() {
     contractsPage.value = 1
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || e.message || "Hisob-kitob ma'lumotlari olinmadi"
-    ledger.value = { rows: [], pagination: { total: 0, page: 1, limit: 50, totalPages: 1 } }
+    ledger.value = { rows: [], pagination: { total: 0, page: 1, limit: 200, totalPages: 1 } }
+    ledgerTotals.value = { all: 0, PAYME: 0, CLICK: 0, CASH: 0 }
     contracts.value = []
     rollup.value = { labels: [], series: [] }
   } finally {
@@ -212,7 +221,6 @@ const contractsPaged = computed(() => {
 const contractsTotalPages = computed(() => Math.max(1, Math.ceil((contracts.value.length || 0) / (contractsPageSize.value || 50))))
 
 function exportLedger() {
-  const rows = ledger.value.rows || []
   const contractsData = contracts.value || []
 
   const makeLedgerRows = (list) =>
@@ -242,22 +250,33 @@ function exportLedger() {
       Usul: c.lastPaymentMethod || '',
     }))
 
-  const stallPaid = makeLedgerRows(rows.filter((r) => r.type === 'stall' && r.status === 'PAID'))
-  const stallUnpaid = makeLedgerRows(rows.filter((r) => r.type === 'stall' && r.status !== 'PAID'))
-  const storePaid = makeLedgerRows(rows.filter((r) => r.type === 'store' && r.status === 'PAID'))
-  const storeUnpaid = makeLedgerRows(rows.filter((r) => r.type === 'store' && r.status !== 'PAID'))
+  const params = buildLedgerParams()
+  const fallbackRows = ledger.value.rows || []
 
-  const contractPaid = makeContractRows(contractsData.filter((c) => !c.unpaid || c.unpaid <= 0))
-  const contractUnpaid = makeContractRows(contractsData.filter((c) => c.unpaid > 0))
+  loading.value = true
+  getLedgerExport(params)
+    .then((exportRes) => {
+      const rows = exportRes?.rows || fallbackRows
+      const stallPaid = makeLedgerRows(rows.filter((r) => r.type === 'stall' && r.status === 'PAID'))
+      const stallUnpaid = makeLedgerRows(rows.filter((r) => r.type === 'stall' && r.status !== 'PAID'))
+      const storePaid = makeLedgerRows(rows.filter((r) => r.type === 'store' && r.status === 'PAID'))
+      const storeUnpaid = makeLedgerRows(rows.filter((r) => r.type === 'store' && r.status !== 'PAID'))
 
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stallPaid), "Rasta To'langan")
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stallUnpaid), "Rasta To'lanmagan")
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(storePaid), "Do'kon To'langan")
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(storeUnpaid), "Do'kon To'lanmagan")
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(contractPaid), "Shartnoma To'langan")
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(contractUnpaid), "Shartnoma To'lanmagan")
-  XLSX.writeFile(wb, 'hisob-kitob.xlsx')
+      const contractPaid = makeContractRows(contractsData.filter((c) => !c.unpaid || c.unpaid <= 0))
+      const contractUnpaid = makeContractRows(contractsData.filter((c) => c.unpaid > 0))
+
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stallPaid), "Rasta To'langan")
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stallUnpaid), "Rasta To'lanmagan")
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(storePaid), "Do'kon To'langan")
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(storeUnpaid), "Do'kon To'lanmagan")
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(contractPaid), "Shartnoma To'langan")
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(contractUnpaid), "Shartnoma To'lanmagan")
+      XLSX.writeFile(wb, 'hisob-kitob.xlsx')
+    })
+    .finally(() => {
+      loading.value = false
+    })
 }
 </script>
 
