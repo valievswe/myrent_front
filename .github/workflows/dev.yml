@@ -42,6 +42,3 @@ jobs:
             cd $FRONT_DIR
             npm install
             npm run build
-
-            # Reload only test-myrent backend
-            pm2 reload ecosystem.config.js --only test-myrent
