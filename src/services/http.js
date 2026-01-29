@@ -6,8 +6,8 @@ const fallbackBase =
     : '/api';
 
 export const http = axios.create({
-  // baseURL: import.meta.env.VITE_API_URL || fallbackBase,
-  baseURL : "http://localhost:3020/api",
+  baseURL: import.meta.env.VITE_API_URL || fallbackBase,
+  // baseURL : "http://localhost:3020/api",
   withCredentials: true,
 })
 
