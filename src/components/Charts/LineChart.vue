@@ -8,6 +8,7 @@ import {
   LinearScale,
   CategoryScale,
   Tooltip,
+  Filler,
 } from 'chart.js'
 
 function createDefaultOptions() {
@@ -49,7 +50,7 @@ const root = ref(null)
 
 let chart
 
-Chart.register(LineElement, PointElement, LineController, LinearScale, CategoryScale, Tooltip)
+Chart.register(LineElement, PointElement, LineController, LinearScale, CategoryScale, Tooltip, Filler)
 
 const chartOptions = computed(() => props.options || createDefaultOptions())
 

@@ -18,7 +18,9 @@ import { listAttendances } from '@/services/attendances'
 import { listContracts } from '@/services/contracts'
 import { listSections } from '@/services/sections'
 import { summarizeContractDebts, summarizeAttendanceDebts } from '@/utils/debt'
-import { startOfTashkentDay } from '@/utils/time'
+import { startOfTashkentDay, parseTashkentDate, getTashkentTodayISO, formatTashkentDate } from '@/utils/time'
+import { getPublicStall } from '@/services/publicPayment'
+import { normalizeStallResults } from '@/utils/publicPayments'
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -86,6 +88,18 @@ const statsFilterOptions = [
   { key: 'all', label: 'Jami' },
   { key: 'stall', label: 'Rasta' },
   { key: 'store', label: "Do'kon" },
+]
+
+const activeTab = ref('general')
+const checkStallNumber = ref('')
+const checkStallDate = ref(getTashkentTodayISO())
+const checkStallResult = ref(null)
+const checkStallLoading = ref(false)
+const checkStallError = ref('')
+
+const tabs = [
+  { key: 'general', label: 'Umumiy' },
+  { key: 'stalls', label: 'Rastalar Tahlili' },
 ]
 
 const numberFormatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 })
@@ -170,8 +184,8 @@ function computeDailySeries(attendances = [], contracts = [], monthKey = selecte
 
   for (const attendance of attendances) {
     if (!attendance || !attendance.date) continue
-    const d = new Date(attendance.date)
-    if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue
+    const d = parseTashkentDate(attendance.date)
+    if (!d || d.getFullYear() !== year || d.getMonth() !== monthIndex) continue
     const isPaid =
       attendance.status === 'PAID' ||
       attendance.transaction?.status === 'PAID'
@@ -184,8 +198,8 @@ function computeDailySeries(attendances = [], contracts = [], monthKey = selecte
   for (const contract of contracts) {
     for (const tx of contract?.transactions || []) {
       if (tx.status !== 'PAID' || !tx.createdAt) continue
-      const d = new Date(tx.createdAt)
-      if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue
+      const d = parseTashkentDate(tx.createdAt)
+      if (!d || d.getFullYear() !== year || d.getMonth() !== monthIndex) continue
       const day = d.getDate()
       const amount = Number((tx.amount && tx.amount.toString()) || 0)
       storesArr[day - 1] += amount
@@ -268,7 +282,7 @@ async function fetchMonthlySeriesChart() {
   }
 }
 
-async function fetchAllAttendances({ pageSize = 200, maxPages = 25 } = {}) {
+async function fetchAllAttendances({ pageSize = 200, maxPages = 50 } = {}) {
   const results = []
   let currentPage = 1
   while (currentPage <= maxPages) {
@@ -281,7 +295,7 @@ async function fetchAllAttendances({ pageSize = 200, maxPages = 25 } = {}) {
   return results
 }
 
-async function fetchAllContracts({ pageSize = 120, maxPages = 15 } = {}) {
+async function fetchAllContracts({ pageSize = 200, maxPages = 25 } = {}) {
   const results = []
   let currentPage = 1
   while (currentPage <= maxPages) {
@@ -330,7 +344,7 @@ async function loadDetailedData() {
 }
 
 function computeSectionDaily(attendances = [], contracts = [], sectionList = []) {
-  const start = startOfTashkentDay(new Date())
+  const start = startOfTashkentDay()
   const end = start ? new Date(start) : null
   if (end) end.setDate(end.getDate() + 1)
 
@@ -365,8 +379,8 @@ function computeSectionDaily(attendances = [], contracts = [], sectionList = [])
 
   const isToday = (value) => {
     if (!start || !end || !value) return false
-    const date = new Date(value)
-    return Number.isFinite(date.getTime()) && date >= start && date < end
+    const date = parseTashkentDate(value)
+    return date && date >= start && date < end
   }
 
   const toNumber = (value) => {
@@ -724,11 +738,29 @@ watch([filterFrom, filterTo, filterType, filterMethod, filterStatus, filterGroup
 watch(selectedMonth, (key) => {
   setMonthRangeFromSelection(key)
   fetchMonthStats()
-  if (allAttendances.value.length || allContracts.value.length) {
-    computeDailySeries(allAttendances.value, allContracts.value, key)
-  }
   fetchFilteredStats()
 })
+
+async function checkStallStatus() {
+  const stall = checkStallNumber.value?.trim()
+  if (!stall) return
+  checkStallLoading.value = true
+  checkStallError.value = ''
+  checkStallResult.value = null
+  try {
+    // Mimic the "Second Page" stall check
+    const data = await getPublicStall(stall, { date: checkStallDate.value, fields: 'min' })
+    const normalized = normalizeStallResults(data, { fallbackDate: checkStallDate.value })
+    checkStallResult.value = normalized[0] || null
+    if (!checkStallResult.value) {
+      checkStallError.value = "Rasta bo'yicha ma'lumot topilmadi"
+    }
+  } catch (e) {
+    checkStallError.value = e?.response?.data?.message || 'Tekshirishda xatolik'
+  } finally {
+    checkStallLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -741,7 +773,25 @@ watch(selectedMonth, (key) => {
         {{ debtError }}
       </div>
 
-      <div class="mb-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 text-white shadow-lg dark:from-slate-800 dark:via-slate-900 dark:to-black">
+      <div class="mb-6 flex space-x-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          @click="activeTab = tab.key"
+          :class="[
+            'flex-1 rounded-lg py-2.5 text-sm font-medium leading-5 ring-white ring-opacity-60 ring-offset-2 ring-offset-blue-400 focus:outline-none focus:ring-2',
+            activeTab === tab.key
+              ? 'bg-white text-slate-900 shadow dark:bg-slate-600 dark:text-white'
+              : 'text-slate-700 hover:bg-white/[0.12] hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
+          ]"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+
+      <!-- GENERAL DASHBOARD TAB -->
+      <div v-show="activeTab === 'general'">
+        <div class="mb-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 text-white shadow-lg dark:from-slate-800 dark:via-slate-900 dark:to-black">
         <div class="text-xs uppercase tracking-wide text-white/80 dark:text-white/80">Bugungi holat</div>
         <div class="mt-2 text-3xl font-semibold md:text-4xl">{{ todayLabel }}</div>
         <div class="mt-6 grid gap-4 md:grid-cols-2">
@@ -1116,6 +1166,158 @@ watch(selectedMonth, (key) => {
           </div>
         </div>
       </CardBox>
+      </div>
+
+      <!-- STALLS ANALYSIS TAB -->
+      <div v-show="activeTab === 'stalls'">
+        <div class="grid gap-6 md:grid-cols-2">
+          <!-- QUICK CHECK WIDGET -->
+          <CardBox class="h-full">
+            <div class="mb-4 border-b border-slate-100 pb-2 dark:border-slate-700">
+              <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100">Tezkor Rasta Tekshiruvi</h3>
+              <p class="text-sm text-slate-500">Rasta raqami bo'yicha to'lov holatini tekshirish</p>
+            </div>
+            
+            <form @submit.prevent="checkStallStatus" class="space-y-4">
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Rasta raqami</label>
+                  <input
+                    v-model="checkStallNumber"
+                    type="text"
+                    required
+                    placeholder="A-101"
+                    class="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800"
+                  />
+                </div>
+                <div>
+                  <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Sana</label>
+                  <input
+                    v-model="checkStallDate"
+                    type="date"
+                    required
+                    class="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800"
+                  />
+                </div>
+              </div>
+              <div class="flex justify-end">
+                <BaseButton
+                  type="submit"
+                  color="info"
+                  :label="checkStallLoading ? 'Tekshirilmoqda...' : 'Tekshirish'"
+                  :disabled="checkStallLoading"
+                />
+              </div>
+            </form>
+
+            <div v-if="checkStallError" class="mt-4 rounded bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-300">
+              {{ checkStallError }}
+            </div>
+
+            <div v-if="checkStallResult" class="mt-4 rounded border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+              <div class="flex items-start justify-between">
+                <div>
+                  <div class="text-lg font-bold text-slate-800 dark:text-slate-100">
+                    {{ checkStallResult.stall?.stallNumber }}
+                  </div>
+                  <div class="text-sm text-slate-500">
+                    {{ checkStallResult.stall?.description || "Izoh yo'q" }}
+                  </div>
+                </div>
+                <div
+                  class="rounded px-2.5 py-1 text-xs font-bold uppercase tracking-wide"
+                  :class="checkStallResult.payment?.isPaid ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'"
+                >
+                  {{ checkStallResult.payment?.status }}
+                </div>
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <div class="text-xs text-slate-500">To'lov summasi</div>
+                  <div class="font-semibold">{{ formatAmount(checkStallResult.payment?.amountDue) }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-slate-500">Sana</div>
+                  <div>{{ checkStallResult.payment?.date }}</div>
+                </div>
+              </div>
+            </div>
+          </CardBox>
+
+          <!-- STALLS TODAY OVERVIEW -->
+          <CardBox class="h-full">
+            <div class="mb-4 border-b border-slate-100 pb-2 dark:border-slate-700">
+              <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100">Bugungi Rasta Hisoboti</h3>
+              <p class="text-sm text-slate-500">{{ todayLabel }}</p>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+              <div class="rounded-lg bg-emerald-50 p-4 text-center dark:bg-emerald-900/20">
+                <div class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{{ formatCount(dailyStalls.count) }}</div>
+                <div class="text-xs uppercase text-emerald-600/80 dark:text-emerald-400/80">To'langan</div>
+              </div>
+              <div class="rounded-lg bg-slate-50 p-4 text-center dark:bg-slate-800">
+                <div class="text-2xl font-bold text-slate-700 dark:text-slate-300">{{ formatAmount(dailyStalls.revenue) }}</div>
+                <div class="text-xs uppercase text-slate-500">Jami Tushum</div>
+              </div>
+            </div>
+
+            <div class="mt-6">
+              <h4 class="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Bo'limlar Qoplami</h4>
+              <div class="max-h-60 overflow-y-auto pr-1">
+                <div v-for="sec in sectionDailySummary" :key="sec.id" class="mb-3 flex items-center justify-between text-sm">
+                  <span class="truncate pr-2 text-slate-600 dark:text-slate-400">{{ sec.name }}</span>
+                  <div class="flex items-center gap-3">
+                    <span class="font-medium">{{ formatCount(sec.stallCount) }} ta</span>
+                    <span class="w-20 text-right text-xs text-slate-400">{{ formatAmount(sec.stallRevenue) }}</span>
+                  </div>
+                </div>
+                <div v-if="!sectionDailySummary.length" class="text-center text-sm text-slate-400">
+                  Ma'lumot yo'q
+                </div>
+              </div>
+            </div>
+          </CardBox>
+        </div>
+
+        <CardBox class="mt-6">
+           <div class="p-6">
+            <h3 class="mb-4 text-lg font-semibold text-slate-800 dark:text-slate-100">Batafsil Hisobot (Jadval)</h3>
+             <div class="overflow-x-auto">
+               <table class="w-full table-auto text-sm">
+                 <thead>
+                   <tr class="bg-slate-50 text-left text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                     <th class="px-4 py-2">Rasta</th>
+                     <th class="px-4 py-2">Bo'lim</th>
+                     <th class="px-4 py-2">Sana</th>
+                     <th class="px-4 py-2">Summa</th>
+                     <th class="px-4 py-2">Holat</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+                    <tr v-for="att in allAttendances.slice(0, 10)" :key="att.id" class="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50">
+                      <td class="px-4 py-2 font-medium">{{ att.stall?.stallNumber || att.stallNumber || '-' }}</td>
+                      <td class="px-4 py-2 text-slate-500">{{ att.stall?.Section?.name || '-' }}</td>
+                      <td class="px-4 py-2">{{ formatTashkentDate(att.date) }}</td>
+                      <td class="px-4 py-2">{{ formatAmount(att.amount) }}</td>
+                      <td class="px-4 py-2">
+                        <span class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                          {{ att.status }}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr v-if="allAttendances.length === 0">
+                      <td colspan="5" class="p-4 text-center text-slate-500">Bugun uchun to'lovlar yuklanmagan</td>
+                    </tr>
+                 </tbody>
+               </table>
+               <div v-if="allAttendances.length > 10" class="mt-2 text-center text-xs text-slate-400">
+                 So'nggi 10 tasi ko'rsatilgan. To'liq ro'yxat uchun "Attendances" bo'limiga o'ting.
+               </div>
+             </div>
+           </div>
+        </CardBox>
+      </div>
     </SectionMain>
   </LayoutAuthenticated>
 </template>
