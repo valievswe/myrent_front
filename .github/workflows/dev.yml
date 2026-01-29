@@ -39,10 +39,5 @@ jobs:
             npm run build
             
             find . -mindepth 1 -maxdepth 1 ! -name dist ! -name .git -exec rm -rf {} +
-            
-            echo "Current folder:"
-            pwd
-            echo "Contents:"
-            ls -la
 
 
