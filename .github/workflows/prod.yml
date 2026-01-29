@@ -17,8 +17,25 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
-            cd /var/www/bozor_front
-            git pull origin main --rebase
+            FRONT_DIR="/var/www/bozor_front"
+            BRANCH="main"
+            NODE_VERSION="24"  # change to your production Node version
+
+            # Load NVM
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+            # Use correct Node version
+            nvm use $NODE_VERSION || nvm install $NODE_VERSION
+
+            # Pull latest code
+            cd $FRONT_DIR
+            git reset --hard
+            git pull origin $BRANCH --rebase
+
+            # Install dependencies and build
             npm install
             npm run build
+
+            # Restart Nginx
             sudo systemctl restart nginx

@@ -18,8 +18,14 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
             FRONT_DIR="/var/www/bozor_test_front"
-            REPO_URL="git@github.com:username/bozor_nest.git"
+            REPO_URL="https://github.com/valievswe/myrent_front.git"
             BRANCH="dev"
+            NODE_VERSION="24"  # change to your Node version
+
+            # Load NVM
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            nvm use $NODE_VERSION || nvm install $NODE_VERSION
 
             # Check if folder exists and is not empty
             if [ ! -d "$FRONT_DIR" ] || [ -z "$(ls -A $FRONT_DIR)" ]; then
@@ -32,7 +38,7 @@ jobs:
               git pull origin $BRANCH
             fi
 
-            # Build frontend
+            # Build frontend using NVM Node/NPM
             cd $FRONT_DIR
             npm install
             npm run build
