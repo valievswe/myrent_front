@@ -29,15 +29,20 @@ jobs:
             if [ ! -d "$FRONT_DIR" ] || [ ! -d "$FRONT_DIR/.git" ]; then
             rm -rf $FRONT_DIR
             git clone --branch $BRANCH --single-branch $REPO_URL $FRONT_DIR
-            else
-            cd $FRONT_DIR
-            git fetch origin $BRANCH
-            git reset --hard origin/$BRANCH
             fi
             
             cd $FRONT_DIR
+            git fetch origin $BRANCH
+            git reset --hard origin/$BRANCH
+            
             npm install
             npm run build
+            
             find . -mindepth 1 -maxdepth 1 ! -name dist ! -name .git -exec rm -rf {} +
+            
+            echo "Current folder:"
             pwd
+            echo "Contents:"
+            ls -la
+
 
