@@ -20,30 +20,22 @@ jobs:
             FRONT_DIR="/var/www/bozor_test_front"
             REPO_URL="https://github.com/valievswe/myrent_front.git"
             BRANCH="dev"
-            NODE_VERSION="24"  # your Node version
+            NODE_VERSION="24"
 
-            # Load NVM
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             nvm use $NODE_VERSION || nvm install $NODE_VERSION
 
-            # Clone or pull latest dev
             if [ ! -d "$FRONT_DIR" ] || [ -z "$(ls -A $FRONT_DIR)" ]; then
-              echo "Folder is missing or empty. Cloning repository..."
               git clone --branch $BRANCH --single-branch $REPO_URL $FRONT_DIR
             else
-              echo "Folder exists. Pulling latest changes..."
               cd $FRONT_DIR
               git fetch origin $BRANCH
               git reset --hard origin/$BRANCH
             fi
 
-            # Build frontend
             cd $FRONT_DIR
             npm install
             npm run build
-
-            # Remove everything except dist
             find . -mindepth 1 -maxdepth 1 ! -name dist -exec rm -rf {} +
-
-            echo "Deployment complete. Only 'dist' folder remains."
+            pwd
