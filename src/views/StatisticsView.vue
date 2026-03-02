@@ -14,10 +14,11 @@ import {
   getStatisticsSeries,
   getMonthlySeries,
 } from '@/services/statistics'
+import { getContractSummary } from '@/services/reconciliation'
 import { listAttendances } from '@/services/attendances'
 import { listContracts } from '@/services/contracts'
 import { listSections } from '@/services/sections'
-import { summarizeContractDebts, summarizeAttendanceDebts } from '@/utils/debt'
+import { summarizeAttendanceDebts } from '@/utils/debt'
 import { startOfTashkentDay } from '@/utils/time'
 
 const loading = ref(false)
@@ -148,6 +149,56 @@ function setMonthRangeFromSelection(key) {
   selectedMonth.value = monthOptions.value[0]?.key || ''
   setMonthRangeFromSelection(selectedMonth.value)
 })()
+
+function toNumber(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
+function isFiniteNumber(value) {
+  return Number.isFinite(Number(value))
+}
+
+function buildContractDebtSummary(payload) {
+  const summaryItems = Array.isArray(payload?.summary)
+    ? payload.summary
+    : Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : []
+  const totals = payload?.totals || {}
+
+  const expectedRaw = payload?.totalExpected ?? totals.totalExpected ?? payload?.expected ?? totals.expected
+  const paidRaw = payload?.totalPaid ?? totals.totalPaid ?? payload?.paid ?? totals.paid
+  const debtRaw = payload?.totalDebt ?? totals.totalDebt ?? payload?.debt ?? totals.debt
+  const debtCountRaw = payload?.contractsWithDebt ?? totals.contractsWithDebt
+  const totalCountRaw = payload?.totalContracts ?? totals.totalContracts
+
+  const expectedFromSummary = summaryItems.reduce(
+    (sum, item) => sum + toNumber(item?.expected ?? item?.monthlyFee ?? item?.shopMonthlyFee),
+    0,
+  )
+  const paidFromSummary = summaryItems.reduce(
+    (sum, item) => sum + toNumber(item?.paid ?? item?.amountPaid),
+    0,
+  )
+
+  const contractsWithDebt = isFiniteNumber(debtCountRaw)
+    ? Number(debtCountRaw)
+    : summaryItems.filter((item) => toNumber(item?.unpaid ?? item?.debt ?? item?.debtAmount) > 0).length
+  const totalContracts = isFiniteNumber(totalCountRaw) ? Number(totalCountRaw) : summaryItems.length
+
+  return {
+    expected: isFiniteNumber(expectedRaw) ? Number(expectedRaw) : expectedFromSummary,
+    paid: isFiniteNumber(paidRaw) ? Number(paidRaw) : paidFromSummary,
+    debt: toNumber(debtRaw),
+    contractsWithDebt,
+    totalContracts,
+  }
+}
 
 function formatCount(value) {
   const numeric = Number(value || 0)
@@ -310,15 +361,16 @@ async function loadDetailedData() {
   sectionSummaryLoading.value = true
   debtError.value = ''
   try {
-    const [att, cons, sec] = await Promise.all([
+    const [att, cons, sec, contractSummaryRes] = await Promise.all([
       fetchAllAttendances(),
       fetchAllContracts(),
       loadSectionsList(),
+      getContractSummary({ isActive: true }),
     ])
     allAttendances.value = att
     allContracts.value = cons
     stallDebtSummary.value = summarizeAttendanceDebts(att)
-    contractDebtSummary.value = summarizeContractDebts(cons, { asOf: new Date() })
+    contractDebtSummary.value = buildContractDebtSummary(contractSummaryRes)
     computeDailySeries(att, cons, selectedMonth.value)
     computeSectionDaily(att, cons, sec)
   } catch (e) {

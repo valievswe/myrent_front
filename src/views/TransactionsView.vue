@@ -10,9 +10,9 @@ import FormControl from '@/components/FormControl.vue'
 import FilterToolbar from '@/components/FilterToolbar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
 import { listTransactions } from '@/services/transactions'
-import { listContracts } from '@/services/contracts'
 import { listAttendances } from '@/services/attendances'
-import { summarizeContractDebts, summarizeAttendanceDebts } from '@/utils/debt'
+import { getContractSummary } from '@/services/reconciliation'
+import { summarizeAttendanceDebts } from '@/utils/debt'
 import { downloadXLSX } from '../utils/export'
 import {
   formatTashkentDate,
@@ -40,6 +40,56 @@ const expandedId = ref(null)
 
 const statusOptions = ['PENDING', 'PAID', 'FAILED', 'CANCELLED']
 const methodOptions = ['CASH', 'CLICK', 'PAYME']
+
+function toNumber(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
+function isFiniteNumber(value) {
+  return Number.isFinite(Number(value))
+}
+
+function buildContractDebtSummary(payload) {
+  const summaryItems = Array.isArray(payload?.summary)
+    ? payload.summary
+    : Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : []
+  const totals = payload?.totals || {}
+
+  const expectedRaw = payload?.totalExpected ?? totals.totalExpected ?? payload?.expected ?? totals.expected
+  const paidRaw = payload?.totalPaid ?? totals.totalPaid ?? payload?.paid ?? totals.paid
+  const debtRaw = payload?.totalDebt ?? totals.totalDebt ?? payload?.debt ?? totals.debt
+  const debtCountRaw = payload?.contractsWithDebt ?? totals.contractsWithDebt
+  const totalCountRaw = payload?.totalContracts ?? totals.totalContracts
+
+  const expectedFromSummary = summaryItems.reduce(
+    (sum, item) => sum + toNumber(item?.expected ?? item?.monthlyFee ?? item?.shopMonthlyFee),
+    0,
+  )
+  const paidFromSummary = summaryItems.reduce(
+    (sum, item) => sum + toNumber(item?.paid ?? item?.amountPaid),
+    0,
+  )
+
+  const contractsWithDebt = isFiniteNumber(debtCountRaw)
+    ? Number(debtCountRaw)
+    : summaryItems.filter((item) => toNumber(item?.unpaid ?? item?.debt ?? item?.debtAmount) > 0).length
+  const totalContracts = isFiniteNumber(totalCountRaw) ? Number(totalCountRaw) : summaryItems.length
+
+  return {
+    expected: isFiniteNumber(expectedRaw) ? Number(expectedRaw) : expectedFromSummary,
+    paid: isFiniteNumber(paidRaw) ? Number(paidRaw) : paidFromSummary,
+    debt: toNumber(debtRaw),
+    contractsWithDebt,
+    totalContracts,
+  }
+}
 
 function matchesDateRange(item) {
   if (!dateFrom.value && !dateTo.value) return true
@@ -226,23 +276,6 @@ function transactionLocation(it) {
   return '-'
 }
 
-async function fetchAllContracts({ activeOnly = true, pageSize = 120, maxPages = 15 } = {}) {
-  const results = []
-  let currentPage = 1
-  while (currentPage <= maxPages) {
-    const res = await listContracts({
-      page: currentPage,
-      limit: pageSize,
-      isActive: activeOnly ? true : undefined,
-    })
-    const chunk = res.data || []
-    results.push(...chunk)
-    if (chunk.length < pageSize) break
-    currentPage++
-  }
-  return results
-}
-
 async function fetchAllAttendances({ pageSize = 200, maxPages = 25 } = {}) {
   const results = []
   let currentPage = 1
@@ -260,11 +293,11 @@ async function refreshDebt() {
   debtLoading.value = true
   debtError.value = ''
   try {
-    const [contracts, attendances] = await Promise.all([
-      fetchAllContracts(),
+    const [contractSummaryRes, attendances] = await Promise.all([
+      getContractSummary({ isActive: true }),
       fetchAllAttendances(),
     ])
-    contractDebtSummary.value = summarizeContractDebts(contracts, { asOf: new Date() })
+    contractDebtSummary.value = buildContractDebtSummary(contractSummaryRes)
     stallDebtSummary.value = summarizeAttendanceDebts(attendances)
   } catch (e) {
     debtError.value = e?.response?.data?.message || e.message || 'Qarzdorlikni hisoblashda xatolik'
