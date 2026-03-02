@@ -285,7 +285,7 @@ async function fetchAllContracts({ pageSize = 120, maxPages = 15 } = {}) {
   const results = []
   let currentPage = 1
   while (currentPage <= maxPages) {
-    const res = await listContracts({ page: currentPage, limit: pageSize })
+    const res = await listContracts({ page: currentPage, limit: pageSize, isActive: true })
     const chunk = res.data || []
     results.push(...chunk)
     if (chunk.length < pageSize) break

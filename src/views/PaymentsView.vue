@@ -201,7 +201,7 @@ async function fetchContracts() {
     const res = await listContracts({
       page: contractPage.value,
       limit: contractLimit.value,
-      isActive: contractStatus.value === 'archived' ? false : undefined,
+      isActive: contractStatus.value === 'archived' ? false : true,
     })
     contracts.value = res.data || []
     totalContracts.value = res.pagination?.total ?? contracts.value.length

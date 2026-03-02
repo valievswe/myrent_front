@@ -32,6 +32,7 @@ import {
   getContractHistory,
   manualContractPayment,
 } from '@/services/contracts'
+import { getContractSummary } from '@/services/reconciliation'
 import { listOwners } from '@/services/owners'
 import { listStores } from '@/services/stores'
 import { downloadXLSX } from '../utils/export'
@@ -587,6 +588,14 @@ async function removeItem(id) {
   try {
     await deleteContract(id)
     await fetchData()
+    await Promise.allSettled([
+      listContracts({ page: 1, limit: 1, isActive: true }),
+      listContracts({ page: 1, limit: 1, isActive: false }),
+      getContractSummary({ isActive: true }),
+    ])
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('contracts:changed', { detail: { reason: 'archived', id } }))
+    }
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || "O'chirishda xatolik"
   } finally {

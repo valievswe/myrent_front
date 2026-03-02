@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
@@ -10,8 +10,8 @@ import {
   getLedger,
   getLedgerTotals,
   getLedgerExport,
+  getContractSummary,
   getMonthlyRollup,
-  getContractsMonthlyStatus,
 } from '@/services/reconciliation'
 import { formatTashkentDate, formatTashkentDateTime } from '@/utils/time'
 import * as XLSX from 'xlsx'
@@ -26,6 +26,7 @@ const ledgerPageSize = ref(200)
 const contractsPage = ref(1)
 const contractsPageSize = ref(50)
 const rollup = ref({ labels: [], series: [] })
+const contractDebtTotals = ref({ totalDebt: 0 })
 const errorMsg = ref('')
 
 const selectedMonth = ref('')
@@ -75,6 +76,48 @@ currentMonthDefaults()
 function formatAmount(value) {
   const n = Number(value || 0)
   return currency.format(Number.isFinite(n) ? n : 0)
+}
+
+function toAmount(value) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
+}
+
+function mapContractSummaryRows(payload) {
+  const summaryItems = Array.isArray(payload?.summary)
+    ? payload.summary
+    : Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : []
+
+  return summaryItems
+    .map((item) => {
+      const contractId = item?.contractId ?? item?.id ?? null
+      if (!contractId) return null
+
+      const unpaid = toAmount(item?.unpaid ?? item?.debt ?? item?.debtAmount)
+      return {
+        contractId,
+        storeNumber: item?.storeNumber ?? item?.store?.storeNumber ?? '-',
+        sectionName: item?.sectionName ?? item?.section?.name ?? '',
+        expected: toAmount(item?.expected ?? item?.monthlyFee ?? item?.shopMonthlyFee),
+        paid: toAmount(item?.paid ?? item?.amountPaid),
+        unpaid,
+        hasDebt: unpaid > 0,
+        overpaid: false,
+        lastPaymentAt: item?.lastPaymentAt ?? null,
+        lastPaymentMethod: item?.lastPaymentMethod ?? item?.paymentMethod ?? null,
+      }
+    })
+    .filter(Boolean)
+}
+
+function extractTotalDebt(payload) {
+  return toAmount(payload?.totalDebt ?? payload?.totals?.totalDebt)
 }
 
 function statusLabel(status) {
@@ -154,9 +197,9 @@ async function loadData() {
   errorMsg.value = ''
   try {
     const params = buildLedgerParams()
-    const [ledgerRes, monthlyStatus, rollupRes, totalsRes] = await Promise.all([
+    const [ledgerRes, contractSummaryRes, rollupRes, totalsRes] = await Promise.all([
       getLedger({ ...params, page: ledgerPage.value, limit: ledgerPageSize.value }),
-      getContractsMonthlyStatus({ year: params.year, month: params.month }),
+      getContractSummary({ ...params, isActive: true }),
       getMonthlyRollup({
         months: 12,
         type: filterType.value,
@@ -166,30 +209,8 @@ async function loadData() {
     ])
     ledger.value = ledgerRes || { rows: [], pagination: { total: 0, page: 1, limit: 200, totalPages: 1 } }
     ledgerTotals.value = totalsRes || { all: 0, PAYME: 0, CLICK: 0, CASH: 0 }
-    // Transform monthly status into rows compatible with table
-    const paidRows = (monthlyStatus?.paid || []).map((p) => ({
-      contractId: p.contractId,
-      storeNumber: p.storeNumber,
-      sectionName: p.sectionName,
-      expected: Number(p.monthlyFee || 0),
-      paid: Number(p.amount || p.monthlyFee || 0),
-      unpaid: 0,
-      overpaid: false,
-      lastPaymentAt: p.lastPaymentAt || null,
-      lastPaymentMethod: p.lastPaymentMethod || null,
-    }))
-    const unpaidRows = (monthlyStatus?.unpaid || []).map((u) => ({
-      contractId: u.contractId,
-      storeNumber: u.storeNumber,
-      sectionName: u.sectionName,
-      expected: Number(u.monthlyFee || 0),
-      paid: 0,
-      unpaid: Number(u.debt || u.monthlyFee || 0),
-      overpaid: false,
-      lastPaymentAt: null,
-      lastPaymentMethod: null,
-    }))
-    contracts.value = [...unpaidRows, ...paidRows]
+    contracts.value = mapContractSummaryRows(contractSummaryRes)
+    contractDebtTotals.value = { totalDebt: extractTotalDebt(contractSummaryRes) }
     rollup.value = rollupRes || { labels: [], series: [] }
     // reset contracts pagination on reload
     contractsPage.value = 1
@@ -197,6 +218,7 @@ async function loadData() {
     errorMsg.value = e?.response?.data?.message || e.message || "Hisob-kitob ma'lumotlari olinmadi"
     ledger.value = { rows: [], pagination: { total: 0, page: 1, limit: 200, totalPages: 1 } }
     ledgerTotals.value = { all: 0, PAYME: 0, CLICK: 0, CASH: 0 }
+    contractDebtTotals.value = { totalDebt: 0 }
     contracts.value = []
     rollup.value = { labels: [], series: [] }
   } finally {
@@ -204,7 +226,18 @@ async function loadData() {
   }
 }
 
-onMounted(loadData)
+function handleContractsUpdated() {
+  loadData()
+}
+
+onMounted(() => {
+  loadData()
+  if (typeof window !== 'undefined') window.addEventListener('contracts:changed', handleContractsUpdated)
+})
+
+onUnmounted(() => {
+  if (typeof window !== 'undefined') window.removeEventListener('contracts:changed', handleContractsUpdated)
+})
 watch([selectedMonth, filterType, filterMethod, filterStatus], () => {
   ledgerPage.value = 1
   loadData()
@@ -474,7 +507,9 @@ function exportLedger() {
       <CardBox class="mb-6">
         <div class="flex items-center justify-between border-b border-slate-100 px-6 pb-3 pt-4 text-sm font-semibold text-slate-800 dark:border-slate-700 dark:text-slate-100">
           <span>Shartnoma yig'indisi (oylik ijara)</span>
-          <span class="text-xs text-slate-500 dark:text-slate-300">{{ contracts.length }} ta shartnoma</span>
+          <span class="text-xs text-slate-500 dark:text-slate-300">
+            {{ contracts.length }} ta shartnoma · Jami qarz: {{ formatAmount(contractDebtTotals.totalDebt) }}
+          </span>
         </div>
         <div class="overflow-x-auto" style="max-height: 60vh">
           <table class="w-full table-auto text-sm">
@@ -517,11 +552,11 @@ function exportLedger() {
                     class="rounded-full px-2 py-1 text-[11px] font-semibold"
                     :class="c.overpaid
                       ? 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-200'
-                      : c.unpaid > 0
+                      : c.hasDebt
                       ? 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-200'
                       : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200'"
                   >
-                    {{ c.overpaid ? 'Ortiqcha' : c.unpaid > 0 ? 'Qoplanmagan' : "To'langan" }}
+                    {{ c.overpaid ? 'Ortiqcha' : c.hasDebt ? 'Qoplanmagan' : "To'langan" }}
                   </span>
                 </td>
                 <td class="px-4 py-2 text-slate-700 dark:text-slate-100">
